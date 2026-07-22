@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: scripts/bootstrap.sh
+      - name: Build Debug arm64
+        run: scripts/build.sh Debug
+      - name: Static analysis
+        run: |
+          xcodebuild analyze \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64'
+      - name: Run tests
+        run: scripts/test.sh
+      - name: Build Release arm64
+        run: scripts/build.sh Release
