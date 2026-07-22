@@ -1,0 +1,69 @@
+name: SKALAAttendance
+options:
+  bundleIdPrefix: kr.skalife
+  deploymentTarget:
+    macOS: "26.0"
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.7.0
+targets:
+  SKALAAttendance:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: SKALAAttendance
+        excludes:
+          - "Resources/AppIcon.iconset"
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance
+        PRODUCT_NAME: SKALAAttendance
+        INFOPLIST_FILE: SKALAAttendance/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SKALAAttendance/Resources/SKALAAttendance.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+  SKALAAttendanceTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - SKALAAttendanceTests
+    dependencies:
+      - target: SKALAAttendance
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance.tests
+        GENERATE_INFOPLIST_FILE: YES
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: YES
+        SWIFT_VERSION: "6.0"
+        SKALA_CHROME_INTEGRATION_CONDITION: SKALA_CHROME_INTEGRATION_DISABLED
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(SKALA_CHROME_INTEGRATION_CONDITION)
+schemes:
+  SKALAAttendance:
+    build:
+      targets:
+        SKALAAttendance: all
+    test:
+      targets:
+        - SKALAAttendanceTests
