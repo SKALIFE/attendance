@@ -4,11 +4,11 @@
 
 ## Current state
 
-- Status: Locally verifiable v1.0.0-ready candidate with native SwiftUI shell redesign, reliability/UX follow-up, and verified limited-scope Umami Cloud ingestion
-- Current phase: Phase 9 + Native shell redesign (DESIGN.md) + reliability/UX follow-up + Umami Cloud telemetry migration verification
+- Status: Locally verifiable v1.0.0-ready candidate with native SwiftUI shell redesign, reliability/UX follow-up, verified limited-scope Umami Cloud ingestion, and fresh-install onboarding entry verification
+- Current phase: Phase 9 + Native shell redesign (DESIGN.md) + reliability/UX follow-up + Umami Cloud telemetry migration + fresh-install QA
 - Current branch: `feat/initial-implementation`
-- Last verified state: `2b20507` plus current uncommitted working tree (includes native shell redesign and Umami Cloud telemetry migration verification)
-- Last updated: 2026-07-22 (Umami Cloud Hobby US telemetry migration verification)
+- Last verified state: `cec49f2` plus this status update; `feat/initial-implementation` is backed up to origin
+- Last updated: 2026-07-22 (fresh-install onboarding entry verification)
 
 ## Phases
 
@@ -86,6 +86,7 @@
 - [x] 온보딩 완료 상태 저장
 - [x] 최초 설정 다시 보기: 설정 > 일반에서 앱 소유 온보딩 창을 일시적으로 다시 열며, 닫아도 저장된 온보딩 완료 상태와 전용 Chrome 프로필·로그인 세션은 변경하지 않음.
 - [x] 온보딩 네이티브 다듬기 (DESIGN.md): 그룹 박스 섹션, SF Symbols, helper text, 접근성 라벨/힌트 추가; Chrome 게이팅·분석 동의·로그인 항목·완료 시 `openAttendance` 호출 경로 유지; 시각적 단계별 레이아웃은 수동 QA 필요.
+- [x] Fresh-install onboarding entry: verified app-owned state was moved to a timestamped local backup, the arm64 Release app was installed under `~/Applications`, and macOS accessibility reported the first-run window title `SKALA Attendance 시작`. Google login, passkey, and attendance actions were not invoked.
 
 ### Analytics
 
@@ -187,6 +188,7 @@
 - [ ] 인증 후 출결 페이지 복귀
 - [ ] 앱과 Chrome 재시작 후 로그인 세션 유지
 - [ ] 실제 출결 페이지 모바일 판별 통과
+- [ ] 온보딩 단계별 문구·선택·다음 진행 흐름의 직접 시각 확인: 첫 시작 창 제목만 자동 확인했으며, 화면 캡처 권한 부재로 전체 내용은 수동 QA 필요.
 - [ ] Developer ID 서명
 - [ ] Apple 공증
 - [ ] 공증된 DMG Gatekeeper 통과
@@ -354,14 +356,15 @@
 | 2026-07-22 | feat/initial-implementation / 2b20507 + working tree | `scripts/build.sh Release` | Passed | arm64 Release app build |
 | 2026-07-22 | feat/initial-implementation / 2b20507 + working tree | Direct authorized app-shaped Umami event | Passed | POST `https://gateway.umami.is/api/send` returned HTTP 200 with server-generated session and visit identifiers; identifiers are intentionally not recorded |
 | 2026-07-22 | feat/initial-implementation / 2b20507 + working tree | Umami Cloud dashboard check | Passed | Events > Activity listed one `app_launch` at hostname `attendance-app.skalife.kr`; this verifies only the one authorized direct event |
+| 2026-07-22 | feat/initial-implementation / cec49f2 + working tree | Fresh-install onboarding entry | Passed | App-owned state was backed up and reset without touching general Chrome; arm64 Release app installed to `~/Applications`; macOS accessibility reported `SKALA Attendance 시작`. No Google auth, passkey, or attendance action was invoked. |
 
 ## Git status
 
 - Current branch: `feat/initial-implementation`
 - Created branches: 없음
-- Created commits: 없음
-- Uncommitted changes: implementation files, docs, scripts, workflows, infra examples, and this status update
-- Remote push: 수행하지 않음
+- Created commits: 30 atomic commits, including this status update
+- Uncommitted changes: 없음
+- Remote push: `origin/feat/initial-implementation`에 수행함
 - Pull Request: 생성하지 않음
 - Tag: 생성하지 않음
 - Release: 생성하지 않음
