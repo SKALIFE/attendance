@@ -30,7 +30,7 @@
 - 주 언어: Swift
 - UI: SwiftUI 중심, 필요한 경우 AppKit 사용
 - 업데이트: Sparkle 2
-- 익명 사용 통계: 자체 호스팅 Umami v3
+- 익명 사용 통계: Umami Cloud Hobby US
 - 배포:
   - GitHub Releases
   - 서명·공증된 DMG
@@ -575,9 +575,10 @@ height: 820~920
 
 Umami SDK 대신 `URLSession`으로 전송 API를 호출한다.
 
-기본 계획:
+현재 production 계획:
 
-- 자체 호스팅 주소: `https://analytics.skalife.kr`
+- Umami Cloud Hobby US
+- collector base URL: `https://gateway.umami.is`
 - 실제 주소와 Website ID는 xcconfig 또는 build setting으로 주입
 - 개발 환경에서 값이 없어도 앱 정상 작동
 - 설정이 없으면 no-op
@@ -604,6 +605,8 @@ POST <UMAMI_BASE_URL>/api/send
 Content-Type: application/json
 User-Agent: SKALA-Attendance/<version> (macOS; arm64)
 ```
+
+Umami Cloud dashboard의 `https://cloud.umami.is/script.js`는 브라우저 추적기 전달용 URL이다. 일부 문서에 이전 Cloud 수집 URL인 `https://cloud.umami.is`가 남아 있을 수 있으나, 현재 Cloud changelog가 식별하는 직접 수집 주소는 `https://gateway.umami.is`다.
 
 ### 익명 설치 ID
 
@@ -679,9 +682,9 @@ User-Agent: SKALA-Attendance/<version> (macOS; arm64)
 
 ---
 
-## 15. Umami v3 셀프 호스팅
+## 15. 선택적 Umami v3 셀프 호스팅 참고 자료
 
-`infra/umami/`에 Raspberry Pi arm64 서버용 예제를 준비한다.
+현재 production은 Umami Cloud Hobby US를 사용한다. `infra/umami/`에는 자체 호스팅이 필요한 경우를 위한 Raspberry Pi arm64 서버 예제를 선택적으로 준비한다.
 
 원격 서버를 임의 변경하거나 배포하지 않는다. Compose와 문서까지만 작성하고 실제 적용은 사용자의 명시적 요청 후 수행한다.
 
@@ -727,7 +730,7 @@ Sparkle 2를 Swift Package Manager로 통합한다.
 Appcast 기본 주소:
 
 ```text
-https://skalife.github.io/attendance/appcast.xml
+https://raw.githubusercontent.com/SKALIFE/attendance-appcast/main/appcast.xml
 ```
 
 Release workflow:
@@ -737,7 +740,7 @@ Release workflow:
 3. EdDSA 서명
 4. appcast 생성 또는 갱신
 5. GitHub Release asset URL 반영
-6. GitHub Pages 배포
+6. 공개 `SKALIFE/attendance-appcast` 저장소의 `main` 브랜치에 appcast와 release notes 게시
 
 ---
 
@@ -753,7 +756,7 @@ Apple Developer Program 결제는 완료했으나 승인 대기 중일 수 있�
 - 자격증명 누락으로 개발 빌드가 실패하지 않음
 - Release 시작 시 필요한 secret을 명확히 검증
 
-예시 secret:
+예시 GitHub Secrets:
 
 ```text
 APPLE_TEAM_ID
@@ -764,8 +767,13 @@ APP_STORE_CONNECT_ISSUER_ID
 APP_STORE_CONNECT_PRIVATE_KEY_BASE64
 SPARKLE_EDDSA_PRIVATE_KEY
 SPARKLE_PUBLIC_KEY
-UMAMI_BASE_URL
-UMAMI_WEBSITE_ID
+```
+
+Umami 설정은 GitHub Secrets가 아니라 GitHub repository variables로 관리한다.
+
+```text
+UMAMI_BASE_URL=https://gateway.umami.is
+UMAMI_WEBSITE_ID=<Umami Cloud Website ID>
 UMAMI_HOSTNAME
 ```
 
@@ -860,7 +868,7 @@ v*.*.*
 8. Sparkle 서명 및 appcast
 9. GitHub Release 생성
 10. asset 업로드
-11. appcast GitHub Pages 배포
+11. 공개 appcast 저장소에 appcast와 release notes 게시
 12. 결과 요약
 
 workflow 권한은 최소화하고 secret을 로그에 출력하지 않는다.
@@ -1361,7 +1369,7 @@ SKALA Attendance는 SKALA 또는 SK AX가 제공하는 공식 애플리케이션
 
 - 수집 이벤트
 - 수집하지 않는 정보
-- Umami self-hosted
+- Umami Cloud 및 선택적 self-hosted 참고 자료
 - 비활성화 방법
 - 익명 ID 재설정
 - 문의 경로
