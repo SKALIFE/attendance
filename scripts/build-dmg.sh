@@ -6,8 +6,10 @@ VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_P
 DMG_DIR="release"
 DMG_PATH="$DMG_DIR/SKALA-Attendance-${VERSION}-arm64.dmg"
 STAGING="$DMG_DIR/dmg-staging"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: DAYEON OH (9XY8538U7T)}"
 
 echo "Building DMG for version $VERSION..."
+codesign --deep --force --options runtime --sign "$SIGN_IDENTITY" --timestamp "$APP_PATH"
 
 mkdir -p "$DMG_DIR"
 rm -rf "$STAGING"
