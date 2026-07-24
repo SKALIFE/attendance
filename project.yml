@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
 settings:
   base:
     ARCHS: arm64
@@ -19,6 +23,9 @@ targets:
     platform: macOS
     sources:
       - path: SKALAAttendance/Sources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
     info:
       path: SKALAAttendance/Resources/Info.plist
       properties:
@@ -35,6 +42,11 @@ targets:
           - CFBundleURLName: kr.skalife.attendance
             CFBundleURLSchemes:
               - skala
+        SUFeedURL: https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml
+        SUPublicEDKey: ""
+        UMAMI_BASE_URL: ""
+        UMAMI_WEBSITE_ID: ""
+        UMAMI_HOSTNAME: attendance-app.skalife.kr
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance
@@ -42,3 +54,5 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: SKALAAttendance/Resources/SKALAAttendance.entitlements
+        CODE_SIGN_HARDENED_RUNTIME: YES

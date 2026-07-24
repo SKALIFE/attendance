@@ -42,5 +42,15 @@
 	</dict>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>UMAMI_BASE_URL</key>
+	<string></string>
+	<key>UMAMI_HOSTNAME</key>
+	<string>attendance-app.skalife.kr</string>
+	<key>UMAMI_WEBSITE_ID</key>
+	<string></string>
 </dict>
 </plist>
