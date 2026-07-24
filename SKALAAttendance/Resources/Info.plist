@@ -45,12 +45,12 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>PEHK0SeSaiSffuZaP8HxyTJX29sR8lNpM76ehfa8GKQ=</string>
 	<key>UMAMI_BASE_URL</key>
-	<string></string>
+	<string>https://gateway.umami.is</string>
 	<key>UMAMI_HOSTNAME</key>
 	<string>attendance-app.skalife.kr</string>
 	<key>UMAMI_WEBSITE_ID</key>
-	<string></string>
+	<string>2cb15230-9bd7-4488-bad8-e806d5f96619</string>
 </dict>
 </plist>

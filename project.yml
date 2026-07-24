@@ -43,16 +43,21 @@ targets:
             CFBundleURLSchemes:
               - skala
         SUFeedURL: https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml
-        SUPublicEDKey: ""
-        UMAMI_BASE_URL: ""
-        UMAMI_WEBSITE_ID: ""
+        SUPublicEDKey: PEHK0SeSaiSffuZaP8HxyTJX29sR8lNpM76ehfa8GKQ=
+        UMAMI_BASE_URL: https://gateway.umami.is
+        UMAMI_WEBSITE_ID: 2cb15230-9bd7-4488-bad8-e806d5f96619
         UMAMI_HOSTNAME: attendance-app.skalife.kr
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance
         PRODUCT_NAME: SKALA Attendance
-        CODE_SIGN_IDENTITY: "-"
-        CODE_SIGN_STYLE: Manual
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: 9XY8538U7T
         CODE_SIGN_ENTITLEMENTS: SKALAAttendance/Resources/SKALAAttendance.entitlements
         CODE_SIGN_HARDENED_RUNTIME: YES
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          CODE_SIGN_STYLE: Manual
