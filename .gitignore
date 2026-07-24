@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Project generation (regenerated locally)
+SKALAAttendance.xcodeproj/
+
+# Release artifacts
+release/
