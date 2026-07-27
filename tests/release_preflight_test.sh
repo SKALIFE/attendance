@@ -196,7 +196,28 @@ EOF
 }
 
 sign_archive() {
-    "$OPENSSL" pkeyutl -sign -rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" | "$OPENSSL" base64 -A
+    local rawin=''
+    if "$OPENSSL" pkeyutl -help 2>&1 | grep -Fq -- ' -rawin'; then
+        rawin=-rawin
+    fi
+    "$OPENSSL" pkeyutl -sign $rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" | "$OPENSSL" base64 -A
+}
+
+make_portable_openssl() {
+    cat >"$TEMP_DIR/portable-openssl" <<EOF
+#!/bin/bash
+set -euo pipefail
+if [ "\$1" = pkeyutl ] && [ "\$2" = -help ]; then
+    "$OPENSSL" "\$@" 2>&1 | grep -v -- ' -rawin' || true
+    exit 0
+fi
+if [ "\$1" = pkeyutl ]; then
+    shift
+    exec "$OPENSSL" pkeyutl -rawin "\$@"
+fi
+exec "$OPENSSL" "\$@"
+EOF
+    chmod +x "$TEMP_DIR/portable-openssl"
 }
 
 make_baseline_with_released_version() {
@@ -263,6 +284,18 @@ make_probe 0
 VALID_OUTPUT="$TEMP_DIR/valid.out"
 expect_success "$VALID_OUTPUT" run_preflight "$VALID_CANDIDATE"
 assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+
+make_portable_openssl
+PREFLIGHT_OPENSSL_BIN="$TEMP_DIR/portable-openssl"
+OPENSSL="$TEMP_DIR/portable-openssl"
+PORTABLE_SIGNATURE=$(sign_archive)
+OPENSSL=$(command -v openssl)
+PORTABLE_CANDIDATE="$TEMP_DIR/portable.xml"
+make_candidate "$PORTABLE_CANDIDATE" "$PORTABLE_SIGNATURE"
+PORTABLE_OUTPUT="$TEMP_DIR/portable.out"
+expect_success "$PORTABLE_OUTPUT" run_preflight "$PORTABLE_CANDIDATE"
+assert_contains "$PORTABLE_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+unset PREFLIGHT_OPENSSL_BIN
 
 MUTATING_ARCHIVE_BEFORE="$TEMP_DIR/archive-before-mutating-verifier.zip"
 cp "$ARCHIVE" "$MUTATING_ARCHIVE_BEFORE"
