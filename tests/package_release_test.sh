@@ -76,7 +76,7 @@ printf '\n' >>"$COMMAND_LOG"
 
 case "$1" in
     -d)
-        printf 'Authority=Developer ID Application: Test Identity (TEAMID)\n' >&2
+        printf 'Authority=%s\n' "${FAKE_CODESIGN_AUTHORITY:-Developer ID Application: Test Identity (TEAMID)}" >&2
         ;;
     --verify)
         printf '%s\n' "${FAKE_CODESIGN_VERIFY_OUTPUT:-}" >&2
@@ -150,17 +150,39 @@ ZIP="$OUTPUT_DIR/SKALA-Attendance-0.1.1-arm64.zip"
 assert_contains "$SUCCESS_OUTPUT" "Created: $DMG"
 assert_contains "$SUCCESS_OUTPUT" "Created: $ZIP"
 assert_contains "$TEMP_DIR/success.commands" "<--verify> <--deep> <--strict> <--verbose=2> <$APP>"
+SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 for helper_path in \
     "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
     "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
     "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
     "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"; do
     assert_contains "$TEMP_DIR/success.commands" "<--verify> <--strict> <--verbose=2> <$helper_path>"
-    assert_contains "$TEMP_DIR/success.commands" "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$helper_path>"
+    if [ "$helper_path" = "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" ]; then
+        assert_contains "$TEMP_DIR/success.commands" "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <--preserve-metadata=entitlements> <$helper_path>"
+    else
+        assert_contains "$TEMP_DIR/success.commands" "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$helper_path>"
+    fi
     [ "$(grep -Fc "<--verify> <--strict> <--verbose=2> <$helper_path>" "$TEMP_DIR/success.commands")" = 1 ] || fail "Expected post-sign verification for $helper_path."
 done
 [ "$(grep -Fc "<--verify> <--strict> <--verbose=2> <$APP>" "$TEMP_DIR/success.commands")" = 2 ] || fail 'Expected post-sign verification for the app.'
 [ "$(grep -Fc "<--verify> <--deep> <--strict> <--verbose=2> <$APP>" "$TEMP_DIR/success.commands")" = 2 ] || fail 'Expected post-sign deep verification for the app.'
+assert_contains "$TEMP_DIR/success.commands" "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$SPARKLE_FRAMEWORK>"
+assert_contains "$TEMP_DIR/success.commands" "<--verify> <--strict> <--verbose=2> <$SPARKLE_FRAMEWORK>"
+
+framework_sign_line=$(grep -nF "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$SPARKLE_FRAMEWORK>" "$TEMP_DIR/success.commands" | cut -d: -f1 || true)
+app_sign_line=$(grep -nF "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$APP>" "$TEMP_DIR/success.commands" | cut -d: -f1 || true)
+[ -n "$framework_sign_line" ] || fail 'Sparkle framework was never signed.'
+[ -n "$app_sign_line" ] || fail 'App was never signed.'
+[ "$framework_sign_line" -lt "$app_sign_line" ] || fail 'Sparkle framework must be signed before the app.'
+for helper_path in \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"; do
+    helper_sign_line=$(grep -nF "<--timestamp>" "$TEMP_DIR/success.commands" | grep -F "<$helper_path>" | cut -d: -f1 || true)
+    [ -n "$helper_sign_line" ] || fail "Sparkle helper was never signed: $helper_path"
+    [ "$helper_sign_line" -lt "$framework_sign_line" ] || fail "Sparkle helper must be signed before the framework: $helper_path"
+done
 
 ZIP_LISTING="$TEMP_DIR/zip-listing.txt"
 /usr/bin/unzip -l "$ZIP" >"$ZIP_LISTING"
@@ -194,9 +216,12 @@ POST_SIGN_FAILURE_DIR="$TEMP_DIR/post-sign-failure-release"
 POST_SIGN_MARKER="$TEMP_DIR/post-sign.marker"
 expect_failure "$POST_SIGN_FAILURE_OUTPUT" env PATH="$TEMP_DIR/bin:$PATH" COMMAND_LOG="$TEMP_DIR/post-sign-failure.commands" \
     FAKE_CODESIGN_SIGNED_MARKER="$POST_SIGN_MARKER" FAKE_CODESIGN_POST_SIGN_VERIFY_STATUS=42 \
+    FAKE_CODESIGN_VERIFY_OUTPUT='post-sign verifier detail' \
     bash "$PACKAGER" --app "$APP_013" --version 0.1.3 --architecture arm64 --output-dir "$POST_SIGN_FAILURE_DIR" \
     --identity 'Developer ID Application: Test Identity (TEAMID)'
 assert_contains "$POST_SIGN_FAILURE_OUTPUT" 'Post-sign signature verification failed.'
+assert_contains "$POST_SIGN_FAILURE_OUTPUT" "Deep signature verification failed for $APP_013:"
+assert_contains "$POST_SIGN_FAILURE_OUTPUT" 'post-sign verifier detail'
 [ ! -e "$POST_SIGN_FAILURE_DIR" ] || fail 'Post-sign verification must fail before creating artifacts.'
 assert_contains "$TEMP_DIR/post-sign-failure.commands" '<--force>'
 
@@ -224,9 +249,23 @@ expect_failure "$SIGNATURE_FAILURE_OUTPUT" env PATH="$TEMP_DIR/bin:$PATH" COMMAN
     bash "$PACKAGER" --app "$APP" --version 0.1.1 --architecture arm64 \
     --output-dir "$SIGNATURE_FAILURE_DIR" --identity 'Developer ID Application: Test Identity (TEAMID)'
 assert_contains "$SIGNATURE_FAILURE_OUTPUT" 'Existing signature verification failed.'
+assert_contains "$SIGNATURE_FAILURE_OUTPUT" "Deep signature verification failed for $APP:"
+assert_contains "$SIGNATURE_FAILURE_OUTPUT" 'verification passed'
 [ ! -e "$SIGNATURE_FAILURE_DIR" ] || fail 'Signature failures must fail before creating output paths.'
 if grep -Fq '<--force>' "$TEMP_DIR/signature-failure.commands"; then
     fail 'Packaging must not re-sign after pre-existing signature verification fails.'
+fi
+
+AUTHORITY_FAILURE_OUTPUT="$TEMP_DIR/authority-failure.out"
+AUTHORITY_FAILURE_DIR="$TEMP_DIR/authority-failure-release"
+expect_failure "$AUTHORITY_FAILURE_OUTPUT" env PATH="$TEMP_DIR/bin:$PATH" COMMAND_LOG="$TEMP_DIR/authority-failure.commands" \
+    FAKE_CODESIGN_AUTHORITY='Developer ID Application: Test Identity (TEAMID) Extra' \
+    bash "$PACKAGER" --app "$APP" --version 0.1.1 --architecture arm64 \
+    --output-dir "$AUTHORITY_FAILURE_DIR" --identity 'Developer ID Application: Test Identity (TEAMID)'
+assert_contains "$AUTHORITY_FAILURE_OUTPUT" 'Existing signature verification failed.'
+[ ! -e "$AUTHORITY_FAILURE_DIR" ] || fail 'Authority mismatches must fail before creating output paths.'
+if grep -Fq '<--force>' "$TEMP_DIR/authority-failure.commands"; then
+    fail 'Packaging must not re-sign after an authority mismatch.'
 fi
 
 STALE_DMG="$OUTPUT_DIR/SKALA-Attendance-0.1.3-arm64.dmg"

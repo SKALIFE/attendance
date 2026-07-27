@@ -23,21 +23,34 @@ verify_code_unit() {
     local failure_message=$2
     local signature_details
 
-    if ! codesign --verify --strict --verbose=2 "$code_path" >/dev/null 2>&1; then
+    if ! signature_details=$(codesign --verify --strict --verbose=2 "$code_path" 2>&1); then
+        printf 'Signature verification failed for %s:\n%s\n' "$code_path" "$signature_details" >&2
         error "$failure_message"
     fi
     if ! signature_details=$(codesign -d --verbose=4 "$code_path" 2>&1); then
         error "$failure_message"
     fi
-    if ! grep -Fq "Authority=$identity" <<<"$signature_details"; then
+    if ! grep -Fxq -- "Authority=$identity" <<<"$signature_details"; then
+        error "$failure_message"
+    fi
+}
+
+verify_deep_code_unit() {
+    local code_path=$1
+    local failure_message=$2
+    local verification_details
+
+    if ! verification_details=$(codesign --verify --deep --strict --verbose=2 "$code_path" 2>&1); then
+        printf 'Deep signature verification failed for %s:\n%s\n' "$code_path" "$verification_details" >&2
         error "$failure_message"
     fi
 }
 
 sign_code_unit() {
     local code_path=$1
+    shift
 
-    codesign --force --options runtime --sign "$identity" --timestamp "$code_path"
+    codesign --force --options runtime --sign "$identity" --timestamp "$@" "$code_path"
 }
 
 app_path='build/Build/Products/Release/SKALA Attendance.app'
@@ -100,34 +113,38 @@ app_executable="$app_path/Contents/MacOS/$executable_name"
 built_architecture=$(lipo -archs "$app_executable") || error 'Unable to determine built app architecture.'
 [ "$built_architecture" = "$architecture" ] || error "Built app architecture must be $architecture; found $built_architecture."
 
-sparkle_root="$app_path/Contents/Frameworks/Sparkle.framework/Versions/B"
+sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
+sparkle_root="$sparkle_framework/Versions/B"
+installer_xpc="$sparkle_root/XPCServices/Installer.xpc"
+downloader_xpc="$sparkle_root/XPCServices/Downloader.xpc"
+autoupdate="$sparkle_root/Autoupdate"
+updater_app="$sparkle_root/Updater.app"
 sparkle_code_units=(
-    "$sparkle_root/Autoupdate"
-    "$sparkle_root/Updater.app"
-    "$sparkle_root/XPCServices/Downloader.xpc"
-    "$sparkle_root/XPCServices/Installer.xpc"
+    "$installer_xpc"
+    "$downloader_xpc"
+    "$autoupdate"
+    "$updater_app"
 )
 for code_path in "${sparkle_code_units[@]}"; do
     [ -e "$code_path" ] || error "Sparkle code unit is missing: $code_path"
 done
 
-if ! codesign --verify --deep --strict --verbose=2 "$app_path" >/dev/null 2>&1; then
-    error 'Existing signature verification failed.'
-fi
+verify_deep_code_unit "$app_path" 'Existing signature verification failed.'
 verify_code_unit "$app_path" 'Existing signature verification failed.'
 
-for code_path in "${sparkle_code_units[@]}"; do
-    sign_code_unit "$code_path"
-done
+sign_code_unit "$installer_xpc"
+sign_code_unit "$downloader_xpc" --preserve-metadata=entitlements
+sign_code_unit "$autoupdate"
+sign_code_unit "$updater_app"
+sign_code_unit "$sparkle_framework"
 sign_code_unit "$app_path"
 
-if ! codesign --verify --deep --strict --verbose=2 "$app_path" >/dev/null 2>&1; then
-    error 'Post-sign signature verification failed.'
-fi
+verify_deep_code_unit "$app_path" 'Post-sign signature verification failed.'
 verify_code_unit "$app_path" 'Post-sign signature verification failed.'
 for code_path in "${sparkle_code_units[@]}"; do
     verify_code_unit "$code_path" 'Post-sign signature verification failed.'
 done
+verify_code_unit "$sparkle_framework" 'Post-sign signature verification failed.'
 
 mkdir -p "$output_dir"
 output_dir=$(cd "$output_dir" && pwd -L)
