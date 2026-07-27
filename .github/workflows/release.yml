@@ -28,9 +28,15 @@ jobs:
             v[0-9]*.[0-9]*.[0-9]*) ;;
             *) printf 'Release tag must use vX.Y.Z format.\n' >&2; exit 1 ;;
           esac
-          git fetch --no-tags origin main
-          TAG_COMMIT=$(git rev-parse "$GITHUB_REF^{commit}")
-          git merge-base --is-ancestor "$TAG_COMMIT" "origin/main"
+          test -n "$(git rev-parse --verify --quiet refs/remotes/origin/main)" || {
+            printf 'Fetched origin/main is missing; refusing to validate release ancestry.\n' >&2
+            exit 1
+          }
+          TAG_COMMIT=$(git rev-parse --verify --quiet "$GITHUB_REF^{commit}") || {
+            printf 'Tagged commit is missing from the checkout.\n' >&2
+            exit 1
+          }
+          git merge-base --is-ancestor "$TAG_COMMIT" "refs/remotes/origin/main"
           test -z "$(git status --porcelain)"
           git tag --points-at "$TAG_COMMIT" | grep -Fx -- "$TAG" >/dev/null
           VERSION=$(awk '/^[[:space:]]*MARKETING_VERSION:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/[[:space:]"]/, ""); print; exit }' project.yml)

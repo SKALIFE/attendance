@@ -143,7 +143,11 @@ require_text 'DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer' 'e
 require_text 'mint install yonaskolb/XcodeGen@2.42.0' 'pinned XcodeGen installation'
 require_text 'printf '\''%s\n'\'' "$HOME/.mint/bin" >>"$GITHUB_PATH"' 'XcodeGen Mint path export'
 
-require_text 'git merge-base --is-ancestor "$TAG_COMMIT" "origin/main"' 'tag commit must be reachable from main'
+require_text 'git rev-parse --verify --quiet refs/remotes/origin/main' 'fetched origin/main presence must be checked'
+require_text 'git rev-parse --verify --quiet "$GITHUB_REF^{commit}"' 'tag commit presence must be checked'
+require_text 'git merge-base --is-ancestor "$TAG_COMMIT" "refs/remotes/origin/main"' 'tag commit must be reachable from fetched main'
+forbidden_fetches=$(grep -E '^[[:space:]]*git fetch([[:space:]]|$)' "$WORKFLOW" || true)
+[ -z "$forbidden_fetches" ] || fail 'Release validation must not fetch after checkout credentials are disabled.'
 require_text 'git status --porcelain' 'clean tagged checkout validation'
 require_text 'bash scripts/ensure-release-absent.sh "$TAG"' 'duplicate release rejection hook'
 require_text 'GH_TOKEN: ${{ github.token }}' 'GitHub CLI authentication'
@@ -210,6 +214,33 @@ grep -Fq '# SKALA Attendance 0.1.1' "$RELEASE_NOTES" || fail 'Release notes must
 grep -Fq '업데이터와 배포 안정성을 개선했습니다.' "$RELEASE_NOTES" || fail 'Release notes must describe updater and distribution reliability improvements.'
 grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
+
+REGRESSION_DIR="$TEMP_DIR/tag-ancestry-regression"
+mkdir -p "$REGRESSION_DIR"
+git -C "$REGRESSION_DIR" init --bare origin.git >/dev/null
+git -C "$REGRESSION_DIR" clone -q origin.git source
+git -C "$REGRESSION_DIR/source" config user.email test@example.invalid
+git -C "$REGRESSION_DIR/source" config user.name 'Release Test'
+printf 'release regression\n' >"$REGRESSION_DIR/source/README"
+git -C "$REGRESSION_DIR/source" add README
+git -C "$REGRESSION_DIR/source" commit -qm initial
+git -C "$REGRESSION_DIR/source" branch -M main
+git -C "$REGRESSION_DIR/source" push -q origin main
+git -C "$REGRESSION_DIR/source" tag v1.0.0
+git -C "$REGRESSION_DIR/source" push -q origin v1.0.0
+git -C "$REGRESSION_DIR/source" fetch -q --tags origin
+(cd "$REGRESSION_DIR/source" && GITHUB_REF=refs/tags/v1.0.0 bash -euo pipefail -c '
+    test -n "$(git rev-parse --verify --quiet refs/remotes/origin/main)"
+    TAG_COMMIT=$(git rev-parse --verify --quiet "$GITHUB_REF^{commit}")
+    git merge-base --is-ancestor "$TAG_COMMIT" refs/remotes/origin/main
+') 2>/dev/null || fail 'Local tag ancestry regression failed.'
+
+git -C "$REGRESSION_DIR/source" update-ref -d refs/remotes/origin/main
+if (cd "$REGRESSION_DIR/source" && GITHUB_REF=refs/tags/v1.0.0 bash -euo pipefail -c '
+    test -n "$(git rev-parse --verify --quiet refs/remotes/origin/main)"
+') 2>/dev/null; then
+    fail 'Missing origin/main regression must fail closed.'
+fi
 
 stage_line() {
     grep -nF -- "$1" "$WORKFLOW" | /usr/bin/head -n 1 | cut -d: -f1
