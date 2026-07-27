@@ -167,11 +167,11 @@ jobs:
           DMG_PATH="release/SKALA-Attendance-${VERSION}-arm64.dmg"
           KEYCHAIN_PATH="$RUNNER_TEMP/skala-dmg-release.keychain-db"
           P12_PATH="$RUNNER_TEMP/skala-dmg-release.p12"
-          ORIGINAL_KEYCHAIN=$(security default-keychain -d user | tr -d '"')
+          ORIGINAL_KEYCHAIN=$(security default-keychain -d user 2>/dev/null | tr -d '"' || true)
           KEYCHAIN_PASSWORD=$(uuidgen)
           DMG_STAGING=$(mktemp -d "$RUNNER_TEMP/skala-final-dmg.XXXXXX")
           cleanup() {
-            security default-keychain -d user -s "$ORIGINAL_KEYCHAIN" >/dev/null 2>&1 || true
+            [ -z "$ORIGINAL_KEYCHAIN" ] || security default-keychain -d user -s "$ORIGINAL_KEYCHAIN" >/dev/null 2>&1 || true
             rm -f "$P12_PATH"
             security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
             rm -rf "$DMG_STAGING"

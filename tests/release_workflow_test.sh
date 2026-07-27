@@ -197,6 +197,8 @@ awk '
 for final_dmg_policy in \
     'DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}' \
     'DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}' \
+    'ORIGINAL_KEYCHAIN=$(security default-keychain -d user 2>/dev/null | tr -d '\''"'\'' || true)' \
+    '[ -z "$ORIGINAL_KEYCHAIN" ] || security default-keychain -d user -s "$ORIGINAL_KEYCHAIN"' \
     'printf '\''%s'\'' "$DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 -D >"$P12_PATH"' \
     'trap cleanup EXIT' \
     'security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"' \
