@@ -241,7 +241,7 @@ jobs:
           ZIP_PATH="release/SKALA-Attendance-${VERSION}-arm64.zip"
           DMG_PATH="release/SKALA-Attendance-${VERSION}-arm64.dmg"
             CHECKSUM_PATH="release/checksums.txt"
-            RELEASE_NOTES_PATH="docs/releases/0.1.1.md"
+            RELEASE_NOTES_PATH="docs/releases/${VERSION}.md"
             test -s "$ZIP_PATH" && test -s "$DMG_PATH" && test -s "$CHECKSUM_PATH" && test -s "$RELEASE_NOTES_PATH"
             gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH" --verify-tag --title "SKALA Attendance $TAG" --notes-file "$RELEASE_NOTES_PATH"
 

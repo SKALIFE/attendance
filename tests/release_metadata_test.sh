@@ -79,10 +79,10 @@ assert_contains "$VALID_OUTPUT" 'Release metadata valid: tag v0.1.1, marketing v
 
 PROJECT_OUTPUT="$TEMP_DIR/project.out"
 expect_success "$PROJECT_OUTPUT" bash "$VALIDATOR" \
-    --tag v0.1.1 \
+    --tag v0.1.2 \
     --project "$ROOT/project.yml" \
     --appcast "$FIXTURES/current-appcast.xml"
-assert_contains "$PROJECT_OUTPUT" 'Release metadata valid: tag v0.1.1, marketing version 0.1.1, build 2, appcast build 1.'
+assert_contains "$PROJECT_OUTPUT" 'Release metadata valid: tag v0.1.2, marketing version 0.1.2, build 3, appcast build 1.'
 
 MISMATCH_OUTPUT="$TEMP_DIR/mismatched-tag.out"
 expect_failure "$MISMATCH_OUTPUT" bash "$VALIDATOR" \

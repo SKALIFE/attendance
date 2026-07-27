@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
 PROJECT="$ROOT/project.yml"
-RELEASE_NOTES="$ROOT/docs/releases/0.1.1.md"
+RELEASE_NOTES="$ROOT/docs/releases/0.1.2.md"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -175,8 +175,8 @@ require_text '--release-probe scripts/verify-local-release-candidate.sh' 'local 
 require_text 'CHECKSUM_PATH="release/checksums.txt"' 'checksum artifact path'
 require_text 'shasum -a 256 "$ZIP_PATH" "$DMG_PATH" >"$CHECKSUM_PATH"' 'checksum-file generation'
 require_text 'gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH"' 'atomic ZIP, DMG, and checksum attachment'
-require_text 'RELEASE_NOTES_PATH="docs/releases/0.1.1.md"' 'v0.1.1 release notes path'
-require_text '--notes-file "$RELEASE_NOTES_PATH"' 'v0.1.1 release notes file'
+require_text 'RELEASE_NOTES_PATH="docs/releases/${VERSION}.md"' 'release notes path derived from VERSION'
+require_text '--notes-file "$RELEASE_NOTES_PATH"' 'versioned release notes file'
 require_text 'SOURCE_APPCAST_SHA256' 'source appcast integrity snapshot'
 require_text 'test "$SOURCE_APPCAST_SHA256" = "$(shasum -a 256 tests/fixtures/current-appcast.xml' 'source appcast integrity check before release'
 require_text 'APPCAST_REPO_TOKEN: ${{ secrets.APPCAST_REPO_TOKEN }}' 'cross-repository appcast publication credential mapping'
@@ -209,8 +209,8 @@ done
 grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
 grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
 grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
-[ -f "$RELEASE_NOTES" ] || fail 'v0.1.1 Korean release notes are missing.'
-grep -Fq '# SKALA Attendance 0.1.1' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.1.'
+[ -f "$RELEASE_NOTES" ] || fail 'v0.1.2 Korean release notes are missing.'
+grep -Fq '# SKALA Attendance 0.1.2' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.2.'
 grep -Fq '업데이터와 배포 안정성을 개선했습니다.' "$RELEASE_NOTES" || fail 'Release notes must describe updater and distribution reliability improvements.'
 grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
