@@ -91,8 +91,8 @@ def validate_workflow!(contents, workflow)
   job = jobs.fetch("validate")
   require_policy(job.fetch("runs-on") == "macos-14", "workflow must use the macos-14 runner")
   require_policy(
-    job.fetch("if") == "github.ref == 'refs/heads/release-automation'",
-    "workflow job must run only on release-automation"
+    job.fetch("if") == "github.ref == 'refs/heads/main'",
+    "workflow job must run only on main"
   )
   require_policy(job.fetch("env").fetch("DEVELOPER_DIR") == "/Applications/Xcode_16.2.app/Contents/Developer", "workflow must select Xcode 16.2")
 
@@ -138,6 +138,17 @@ abort "Runner setup workflow is missing." unless File.file?(WORKFLOW)
 contents = File.read(WORKFLOW)
 workflow = YAML.safe_load(contents, aliases: false)
 validate_workflow!(contents, workflow)
+
+release_automation_guard = contents.sub(
+  "github.ref == 'refs/heads/main'",
+  "github.ref == 'refs/heads/release-automation'"
+)
+begin
+  validate_workflow!(release_automation_guard, YAML.safe_load(release_automation_guard, aliases: false))
+rescue PolicyError
+else
+  raise "Release-automation-only workflow guard was not rejected."
+end
 
 secret_output_mutations = FORBIDDEN_SECRET_VARIABLES.to_h do |secret|
   ["secret-output-#{secret}", "echo \"$#{secret}\""]

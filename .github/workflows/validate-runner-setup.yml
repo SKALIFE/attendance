@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   validate:
-    if: github.ref == 'refs/heads/release-automation'
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-14
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
