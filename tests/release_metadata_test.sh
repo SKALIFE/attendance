@@ -33,6 +33,7 @@ snapshot_tracked_contents() {
 
     git -C "$ROOT" ls-files -z |
         while IFS= read -r -d '' path; do
+            [ -f "$ROOT/$path" ] || continue
             shasum -a 256 "$ROOT/$path"
         done >"$snapshot"
 }

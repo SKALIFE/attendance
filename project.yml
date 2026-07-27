@@ -17,6 +17,14 @@ settings:
     COMBINE_HIDPI_IMAGES: YES
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+schemes:
+  SKALAAttendance:
+    build:
+      targets:
+        SKALAAttendance: all
+    test:
+      targets:
+        - SKALAAttendanceTests
 targets:
   SKALAAttendance:
     type: application
@@ -58,6 +66,25 @@ targets:
         Debug:
           CODE_SIGN_IDENTITY: "-"
           CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          CODE_SIGN_STYLE: Manual
+  SKALAAttendanceTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SKALAAttendance/Tests
+    dependencies:
+      - target: SKALAAttendance
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance.tests
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGN_STYLE: Manual
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           CODE_SIGN_STYLE: Manual
