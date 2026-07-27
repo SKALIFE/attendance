@@ -48,57 +48,60 @@ make_archive() {
 }
 
 make_test_project() {
-    awk -v public_key="$TEST_PUBLIC_KEY" '
+    local destination=${1:-$TEST_PROJECT}
+    local public_key=${2:-$TEST_PUBLIC_KEY}
+
+    awk -v public_key="$public_key" '
         /^[[:space:]]*SUPublicEDKey:[[:space:]]*/ {
             sub(/:.*/, ": " public_key)
         }
         { print }
-    ' "$PROJECT" >"$TEST_PROJECT"
+    ' "$PROJECT" >"$destination"
 }
 
 make_signer() {
-    local output_status=${1:-0}
-    local mutate=${2:-false}
+    local signing_status=${1:-0}
+    local signing_mutate=${2:-false}
+    local verification_status=${3:-0}
+    local verification_mutate=${4:-false}
 
     cat >"$TOOLS_BIN/sign_update" <<EOF
 #!/bin/bash
 set -euo pipefail
-[ "\$#" = 1 ] || exit 91
-[ -n "\${SPARKLE_EDDSA_PRIVATE_KEY:-}" ] || exit 92
-[ -z "\${LEAK_MARKER+x}" ] || exit 93
-[ -f "\$1" ] || exit 94
-if [ "$mutate" = true ]; then
-    printf 'tampered by signer\\n' >>"\$1"
+printf 'sign_update' >>"$TOOL_LOG"
+printf ' <%s>' "\$@" >>"$TOOL_LOG"
+printf '\\n' >>"$TOOL_LOG"
+[ -z "\${SPARKLE_EDDSA_PRIVATE_KEY+x}" ] || exit 91
+[ -z "\${LEAK_MARKER+x}" ] || exit 92
+mode=sign
+if [ "\$1" = --verify ]; then
+    mode=verify
+    shift
 fi
-signature=\$("$OPENSSL" pkeyutl -sign -rawin -inkey "\$SPARKLE_EDDSA_PRIVATE_KEY" -in "\$1" | "$OPENSSL" base64 -A)
-printf 'sparkle:edSignature="%s" length="%s"\\n' "\$signature" "\$(stat -f '%z' "\$1")"
-exit $output_status
-EOF
-    chmod +x "$TOOLS_BIN/sign_update"
-}
-
-make_verifier() {
-    local status=${1:-0}
-    local mutate=${2:-false}
-
-    cat >"$TOOLS_BIN/verify_update" <<EOF
-#!/bin/bash
-set -euo pipefail
-[ "\$#" = 4 ] || exit 81
-[ "\$1" = 2.9.4 ] || exit 82
-[ "\$2" = '$TEST_PUBLIC_KEY' ] || exit 83
-[ -z "\${SPARKLE_EDDSA_PRIVATE_KEY+x}" ] || exit 84
-[ -z "\${LEAK_MARKER+x}" ] || exit 85
+[ "\$1" = --ed-key-file ] && [ "\$2" = - ] || exit 93
+shift 2
+private_key_path=\$(cat)
+[ "\$private_key_path" = '$TEST_PRIVATE_KEY' ] || exit 94
+[ -f "\$1" ] || exit 95
+archive=\$1
+if [ "\$mode" = sign ]; then
+    if [ "$signing_mutate" = true ]; then
+        printf 'tampered by signer\\n' >>"\$archive"
+    fi
+    signature=\$("$OPENSSL" pkeyutl -sign -rawin -inkey '$TEST_PRIVATE_DER' -in "\$archive" | "$OPENSSL" base64 -A)
+    printf 'sparkle:edSignature="%s" length="%s"\\n' "\$signature" "\$(stat -f '%z' "\$archive")"
+    exit $signing_status
+fi
 signature_file=\$(mktemp)
 trap 'rm -f "\$signature_file"' EXIT
-printf '%s' "\$4" | "$OPENSSL" base64 -d -A >"\$signature_file"
-"$OPENSSL" pkeyutl -verify -rawin -pubin -inkey '$TEST_PUBLIC_PEM' -in "\$3" -sigfile "\$signature_file" >/dev/null
-if [ "$mutate" = true ]; then
-    printf 'tampered by verifier\\n' >>"\$3"
+printf '%s' "\$2" | "$OPENSSL" base64 -d -A >"\$signature_file"
+"$OPENSSL" pkeyutl -verify -rawin -pubin -inkey '$TEST_PUBLIC_PEM' -in "\$archive" -sigfile "\$signature_file" >/dev/null
+if [ "$verification_mutate" = true ]; then
+    printf 'tampered by verifier\\n' >>"\$archive"
 fi
-exit $status
+exit $verification_status
 EOF
-    chmod +x "$TOOLS_BIN/verify_update"
+    chmod +x "$TOOLS_BIN/sign_update"
 }
 
 make_release_probe() {
@@ -119,17 +122,19 @@ EOF
 }
 
 run_generator() {
-    env LEAK_MARKER='must-not-reach-tools' SPARKLE_EDDSA_PRIVATE_KEY="$TEST_PRIVATE_KEY" \
+    env LEAK_MARKER='must-not-reach-tools' OPENSSL_BIN="$OPENSSL" SPARKLE_EDDSA_PRIVATE_KEY="$TEST_PRIVATE_KEY" TOOL_LOG="$TOOL_LOG" \
         bash "$GENERATOR" \
         --tag v0.1.1 --build 2 --archive "$ARCHIVE" --archive-sha256 "$ARCHIVE_DIGEST" \
         --archive-url "$ARCHIVE_URL" --appcast "$APPCAST" --project "$TEST_PROJECT" \
         --sparkle-tools-root "$TOOLS_ROOT" --release-probe "$PROBE" "$@"
 }
 
-TEST_PRIVATE_KEY="$TEMP_DIR/disposable-ed25519-private.pem"
+TEST_PRIVATE_KEY=$("$OPENSSL" rand -base64 32)
+TEST_PRIVATE_DER="$TEMP_DIR/disposable-ed25519-private.der"
 TEST_PUBLIC_PEM="$TEMP_DIR/disposable-ed25519-public.pem"
-"$OPENSSL" genpkey -algorithm ED25519 -out "$TEST_PRIVATE_KEY"
-"$OPENSSL" pkey -in "$TEST_PRIVATE_KEY" -pubout -out "$TEST_PUBLIC_PEM"
+printf '\060\056\002\001\000\060\005\006\003\053\145\160\004\042\004\040' >"$TEST_PRIVATE_DER"
+printf '%s' "$TEST_PRIVATE_KEY" | base64 -D >>"$TEST_PRIVATE_DER"
+"$OPENSSL" pkey -inform DER -in "$TEST_PRIVATE_DER" -pubout -out "$TEST_PUBLIC_PEM"
 TEST_PUBLIC_KEY=$("$OPENSSL" pkey -pubin -in "$TEST_PUBLIC_PEM" -pubout -outform DER | dd bs=1 skip=12 2>/dev/null | "$OPENSSL" base64 -A)
 
 TEST_PROJECT="$TEMP_DIR/project.yml"
@@ -142,11 +147,11 @@ ARCHIVE_SIZE=$(stat -f '%z' "$ARCHIVE")
 ARCHIVE_DIGEST=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
 ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip'
 TOOLS_ROOT="$TEMP_DIR/sparkle-tools"
-TOOLS_BIN="$TOOLS_ROOT/2.9.4/bin"
+TOOLS_BIN="$TOOLS_ROOT/bin"
 mkdir -p "$TOOLS_BIN"
+TOOL_LOG="$TEMP_DIR/sign-update.log"
 PROBE="$TEMP_DIR/release_probe"
 make_signer
-make_verifier
 make_release_probe
 
 BASELINE_BEFORE="$TEMP_DIR/baseline-before.xml"
@@ -157,11 +162,20 @@ xmllint --noout "$VALID_OUTPUT"
 SIGNATURE=$(awk -F 'sparkle:edSignature="' 'NF > 1 { split($2, value, "\""); print value[1] }' "$VALID_OUTPUT")
 assert_contains "$VALID_OUTPUT" "sparkle:edSignature=\"$SIGNATURE\""
 assert_contains "$VALID_OUTPUT" "url=\"$ARCHIVE_URL\""
+assert_contains "$TOOL_LOG" "<--ed-key-file> <-> <$ARCHIVE>"
+assert_contains "$TOOL_LOG" "<--verify> <--ed-key-file> <-> <$ARCHIVE> <$SIGNATURE>"
 assert_unchanged "$BASELINE_BEFORE" "$APPCAST"
 [ -z "${APPCAST_ITEM_MANUAL_QA:-}" ] || cp "$VALID_OUTPUT" "$APPCAST_ITEM_MANUAL_QA"
-[ -z "${APPCAST_ITEM_MANUAL_QA_ARCHIVE:-}" ] || cp "$ARCHIVE" "$APPCAST_ITEM_MANUAL_QA_ARCHIVE"
-[ -z "${APPCAST_ITEM_MANUAL_QA_DIGEST:-}" ] || printf '%s  %s\n' "$ARCHIVE_DIGEST" "$(basename "$APPCAST_ITEM_MANUAL_QA_ARCHIVE")" >"$APPCAST_ITEM_MANUAL_QA_DIGEST"
+[ -z "${APPCAST_ITEM_MANUAL_QA_DIGEST:-}" ] || printf '%s  %s\n' "$ARCHIVE_DIGEST" "$(basename "$ARCHIVE")" >"$APPCAST_ITEM_MANUAL_QA_DIGEST"
 [ -z "${APPCAST_ITEM_MANUAL_QA_PUBLIC_KEY:-}" ] || cp "$TEST_PUBLIC_PEM" "$APPCAST_ITEM_MANUAL_QA_PUBLIC_KEY"
+
+MISMATCHED_PROJECT="$TEMP_DIR/mismatched-project.yml"
+MISMATCHED_PUBLIC_KEY=$("$OPENSSL" rand -base64 32)
+[ "$MISMATCHED_PUBLIC_KEY" != "$TEST_PUBLIC_KEY" ] || fail 'Unable to construct a mismatched Sparkle public key fixture.'
+make_test_project "$MISMATCHED_PROJECT" "$MISMATCHED_PUBLIC_KEY"
+MISMATCHED_KEY_OUTPUT="$TEMP_DIR/mismatched-key.out"
+expect_failure "$MISMATCHED_KEY_OUTPUT" run_generator --project "$MISMATCHED_PROJECT"
+assert_contains "$MISMATCHED_KEY_OUTPUT" 'Signing key does not match project SUPublicEDKey.'
 
 MISSING_KEY_OUTPUT="$TEMP_DIR/missing-key.out"
 expect_failure "$MISSING_KEY_OUTPUT" env -u SPARKLE_EDDSA_PRIVATE_KEY \
@@ -216,7 +230,7 @@ assert_unchanged "$BASELINE_BEFORE" "$APPCAST"
 MISSING_TOOLS_OUTPUT="$TEMP_DIR/missing-tools.out"
 mkdir -p "$TEMP_DIR/missing-tools"
 expect_failure "$MISSING_TOOLS_OUTPUT" run_generator --sparkle-tools-root "$TEMP_DIR/missing-tools"
-assert_contains "$MISSING_TOOLS_OUTPUT" 'Pinned Sparkle tools are missing or not executable.'
+assert_contains "$MISSING_TOOLS_OUTPUT" 'Pinned Sparkle sign_update is missing or not executable.'
 
 MUTATING_SIGNER_OUTPUT="$TEMP_DIR/mutating-signer.out"
 ARCHIVE_BEFORE="$TEMP_DIR/archive-before.zip"
@@ -228,11 +242,11 @@ assert_unchanged "$ARCHIVE_BEFORE" "$ARCHIVE"
 make_signer
 
 MUTATING_VERIFIER_OUTPUT="$TEMP_DIR/mutating-verifier.out"
-make_verifier 0 true
+make_signer 0 false 0 true
 expect_failure "$MUTATING_VERIFIER_OUTPUT" run_generator
 assert_contains "$MUTATING_VERIFIER_OUTPUT" 'Archive changed while it was being signed.'
 assert_unchanged "$ARCHIVE_BEFORE" "$ARCHIVE"
-make_verifier
+make_signer
 
 BAD_SIGNATURE_OUTPUT="$TEMP_DIR/bad-signature.out"
 cp "$TOOLS_BIN/sign_update" "$TOOLS_BIN/sign_update.good"

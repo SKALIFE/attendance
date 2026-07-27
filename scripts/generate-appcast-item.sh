@@ -14,6 +14,9 @@ error() {
 cleanup() {
     [ -z "${candidate:-}" ] || rm -f "$candidate"
     [ -z "${archive_backup:-}" ] || rm -f "$archive_backup"
+    [ -z "${private_key_der:-}" ] || rm -f "$private_key_der"
+    [ -z "${private_key_data:-}" ] || rm -f "$private_key_data"
+    unset private_key_material
 }
 
 restore_archive() {
@@ -104,17 +107,58 @@ read_project_metadata() {
 }
 
 resolve_sparkle_tools() {
-    local signer_directory verifier_directory
+    local signer_directory
 
     sparkle_tools_root=$(cd "$sparkle_tools_root" && pwd -P) || error 'Pinned Sparkle tools root is missing or unreadable.'
-    sparkle_sign_update="$sparkle_tools_root/$sparkle_version/bin/sign_update"
-    sparkle_verify_update="$sparkle_tools_root/$sparkle_version/bin/verify_update"
-    [ -x "$sparkle_sign_update" ] && [ -x "$sparkle_verify_update" ] || error 'Pinned Sparkle tools are missing or not executable.'
+    sparkle_sign_update="$sparkle_tools_root/bin/sign_update"
+    [ -x "$sparkle_sign_update" ] || error 'Pinned Sparkle sign_update is missing or not executable.'
 
     signer_directory=$(cd "$(dirname "$sparkle_sign_update")" && pwd -P)
-    verifier_directory=$(cd "$(dirname "$sparkle_verify_update")" && pwd -P)
     case "$signer_directory/" in "$sparkle_tools_root/"*) ;; *) error 'Pinned Sparkle signer escapes the tools root.' ;; esac
-    case "$verifier_directory/" in "$sparkle_tools_root/"*) ;; *) error 'Pinned Sparkle verifier escapes the tools root.' ;; esac
+}
+
+resolve_openssl() {
+    local candidate
+
+    for candidate in "${OPENSSL_BIN:-}" "$(command -v openssl 2>/dev/null || true)" \
+        /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+        [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+        if "$candidate" list -public-key-algorithms 2>/dev/null | grep -Fq ED25519; then
+            openssl_bin=$candidate
+            return
+        fi
+    done
+
+    error 'An OpenSSL binary with Ed25519 support is required to validate the Sparkle signing key.'
+}
+
+derive_signing_public_key() {
+    local key_size
+
+    resolve_openssl
+    private_key_data=$(mktemp "$appcast_dir/.sparkle-private-key.XXXXXX") || error 'Unable to prepare Sparkle signing key validation.'
+    chmod 600 "$private_key_data" || error 'Unable to prepare Sparkle signing key validation.'
+    if ! printf '%s' "$private_key_material" | /usr/bin/base64 -D >"$private_key_data" 2>/dev/null; then
+        error 'SPARKLE_EDDSA_PRIVATE_KEY is invalid.'
+    fi
+    key_size=$(stat -f '%z' "$private_key_data") || error 'SPARKLE_EDDSA_PRIVATE_KEY is invalid.'
+
+    case "$key_size" in
+        32)
+            private_key_der=$(mktemp "$appcast_dir/.sparkle-private-key-der.XXXXXX") || error 'Unable to prepare Sparkle signing key validation.'
+            chmod 600 "$private_key_der" || error 'Unable to prepare Sparkle signing key validation.'
+            printf '\060\056\002\001\000\060\005\006\003\053\145\160\004\042\004\040' >"$private_key_der"
+            cat "$private_key_data" >>"$private_key_der"
+            signing_public_key=$("$openssl_bin" pkey -inform DER -in "$private_key_der" -pubout -outform DER 2>/dev/null |
+                dd bs=1 skip=12 2>/dev/null | "$openssl_bin" base64 -A) || error 'Unable to derive the Sparkle signing public key.'
+            ;;
+        96)
+            signing_public_key=$(dd if="$private_key_data" bs=1 skip=64 count=32 2>/dev/null | "$openssl_bin" base64 -A) || error 'Unable to derive the Sparkle signing public key.'
+            ;;
+        *)
+            error 'SPARKLE_EDDSA_PRIVATE_KEY is invalid.'
+            ;;
+    esac
 }
 
 ensure_clean_worktree() {
@@ -207,6 +251,11 @@ done
 [ -f "$project" ] && [ -r "$project" ] || error 'Project file is missing or unreadable.'
 [ -x "$release_probe" ] || error 'Release availability probe is missing or not executable.'
 
+private_key_material=${SPARKLE_EDDSA_PRIVATE_KEY:-}
+unset SPARKLE_EDDSA_PRIVATE_KEY
+[ -n "$private_key_material" ] || error 'SPARKLE_EDDSA_PRIVATE_KEY is required for Sparkle signing.'
+trap cleanup EXIT
+
 version=${tag#v}
 archive_name=$(basename "$archive")
 expected_archive_name="SKALA-Attendance-$version-arm64.zip"
@@ -219,6 +268,8 @@ appcast_dir=$(cd "$(dirname "$appcast")" && pwd -P)
 validate_xml "$appcast"
 read_project_metadata
 resolve_sparkle_tools
+derive_signing_public_key
+[ "$signing_public_key" = "$public_key" ] || error 'Signing key does not match project SUPublicEDKey.'
 
 current_build=$(maximum_build "$appcast")
 [ -n "$current_build" ] || error 'No numeric sparkle:version found in appcast.'
@@ -246,13 +297,11 @@ archive_digest=$(shasum -a 256 "$archive" | awk '{print $1}') || error 'Unable t
 [ "$archive_digest" = "$archive_sha256" ] || error 'Archive SHA-256 does not match the expected release asset digest.'
 
 env -i PATH=/usr/bin:/bin "$release_probe" "$archive_url" "$archive_size" "$archive_sha256" || error 'Release asset availability check failed.'
-[ -n "${SPARKLE_EDDSA_PRIVATE_KEY:-}" ] || error 'SPARKLE_EDDSA_PRIVATE_KEY is required for Sparkle signing.'
 
 archive_backup=$(mktemp "$appcast_dir/.appcast-archive.XXXXXX") || error 'Unable to preserve archive integrity before signing.'
-trap cleanup EXIT
 cp -p "$archive" "$archive_backup" || error 'Unable to preserve archive integrity before signing.'
 
-signer_output=$(env -i PATH=/usr/bin:/bin SPARKLE_EDDSA_PRIVATE_KEY="$SPARKLE_EDDSA_PRIVATE_KEY" "$sparkle_sign_update" "$archive") || fail_after_signing 'Sparkle sign_update failed.'
+signer_output=$(printf '%s\n' "$private_key_material" | env -i PATH=/usr/bin:/bin "$sparkle_sign_update" --ed-key-file - "$archive") || fail_after_signing 'Sparkle sign_update failed.'
 if [[ ! "$signer_output" =~ ^sparkle:edSignature=\"([A-Za-z0-9+/]{86}==)\"[[:space:]]length=\"([0-9]+)\"$ ]]; then
     fail_after_signing 'Sparkle sign_update returned invalid signature metadata.'
 fi
@@ -260,7 +309,7 @@ signature=${BASH_REMATCH[1]}
 signed_length=${BASH_REMATCH[2]}
 [ "$signed_length" = "$archive_size" ] || fail_after_signing 'Sparkle sign_update length does not match archive size.'
 
-env -i PATH=/usr/bin:/bin "$sparkle_verify_update" "$sparkle_version" "$public_key" "$archive" "$signature" || fail_after_signing 'Sparkle signature verification failed.'
+printf '%s\n' "$private_key_material" | env -i PATH=/usr/bin:/bin "$sparkle_sign_update" --verify --ed-key-file - "$archive" "$signature" || fail_after_signing 'Sparkle signature verification failed.'
 verified_size=$(stat -f '%z' "$archive") || fail_after_signing 'Unable to determine archive size after signing.'
 verified_digest=$(shasum -a 256 "$archive" | awk '{print $1}') || fail_after_signing 'Unable to digest archive after signing.'
 if [ "$archive_size" != "$verified_size" ] || [ "$archive_sha256" != "$verified_digest" ]; then
