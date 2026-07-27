@@ -181,7 +181,7 @@ require_text 'P12_PATH="$RUNNER_TEMP/skala-dmg-release.p12"' 'final DMG certific
 require_text 'unset DEVELOPER_ID_APPLICATION_P12_BASE64 DEVELOPER_ID_APPLICATION_P12_PASSWORD' 'final DMG signing secret scrub'
 require_text 'security default-keychain -d user -s "$ORIGINAL_KEYCHAIN"' 'final DMG default keychain restoration'
 require_text 'security delete-keychain "$KEYCHAIN_PATH"' 'final DMG keychain cleanup'
-require_text 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --keychain "$KEYCHAIN_PATH" --sign "$IDENTITY" "$DMG_PATH"' 'Developer ID signature for final DMG'
+require_text 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --keychain "$KEYCHAIN_PATH" --sign "$IDENTITY_HASH" "$DMG_PATH"' 'Developer ID signature for final DMG'
 require_text 'codesign --verify --strict --verbose=4 "$DMG_PATH"' 'final DMG signature verification'
 require_text 'grep -Fxq -- "Authority=$IDENTITY" <<<"$SIGNATURE_DETAILS"' 'final DMG authority verification'
 require_text 'grep -Fxq -- "TeamIdentifier=$APPLE_TEAM_ID" <<<"$SIGNATURE_DETAILS"' 'final DMG team verification'
@@ -203,7 +203,9 @@ for final_dmg_policy in \
     'trap cleanup EXIT' \
     'security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"' \
     'security import "$P12_PATH" -k "$KEYCHAIN_PATH"' \
+    'security list-keychains -d user -s "$KEYCHAIN_PATH"' \
     'IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH"' \
+    'IDENTITY_HASH=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH"' \
     'security default-keychain -d user -s "$ORIGINAL_KEYCHAIN"' \
     'rm -f "$P12_PATH"' \
     'security delete-keychain "$KEYCHAIN_PATH"' \
@@ -297,7 +299,7 @@ app_notarize_line=$(stage_line 'bash scripts/notarize.sh --app "$APP_PATH"')
 zip_rebuild_line=$(stage_line 'Rebuild ZIP from stapled app')
 final_dmg_line=$(stage_line 'Create and notarize DMG from stapled app')
 dmg_create_line=$(stage_line 'hdiutil create \')
-dmg_sign_line=$(stage_line 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --keychain "$KEYCHAIN_PATH" --sign "$IDENTITY" "$DMG_PATH"')
+dmg_sign_line=$(stage_line 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --keychain "$KEYCHAIN_PATH" --sign "$IDENTITY_HASH" "$DMG_PATH"')
 dmg_verify_line=$(stage_line 'codesign --verify --strict --verbose=4 "$DMG_PATH"')
 dmg_authority_line=$(stage_line 'grep -Fxq -- "Authority=$IDENTITY" <<<"$SIGNATURE_DETAILS"')
 dmg_team_line=$(stage_line 'grep -Fxq -- "TeamIdentifier=$APPLE_TEAM_ID" <<<"$SIGNATURE_DETAILS"')
