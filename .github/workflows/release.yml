@@ -47,6 +47,13 @@ jobs:
       - name: Run release metadata tests
         run: bash tests/release_metadata_test.sh
 
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          brew install mint
+          mint install yonaskolb/XcodeGen@2.42.0
+          printf '%s\n' "$HOME/.mint/bin" >>"$GITHUB_PATH"
+
       - name: Generate Xcode project and resolve Sparkle
         run: |
           set -euo pipefail
@@ -94,7 +101,9 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
-            -destination 'platform=macOS,arch=arm64'
+            -destination 'platform=macOS,arch=arm64' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
           APP_PATH='build/Build/Products/Release/SKALA Attendance.app'
           bash tests/sparkle_2_9_4_integration_test.sh \
             --tools-root "$RUNNER_TEMP/source-packages/artifacts/sparkle/Sparkle" \
@@ -225,9 +234,10 @@ jobs:
           VERSION="${TAG#v}"
           ZIP_PATH="release/SKALA-Attendance-${VERSION}-arm64.zip"
           DMG_PATH="release/SKALA-Attendance-${VERSION}-arm64.dmg"
-          CHECKSUM_PATH="release/checksums.txt"
-           test -s "$ZIP_PATH" && test -s "$DMG_PATH" && test -s "$CHECKSUM_PATH"
-           gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH" --verify-tag --title "SKALA Attendance $TAG" --generate-notes
+            CHECKSUM_PATH="release/checksums.txt"
+            RELEASE_NOTES_PATH="docs/releases/0.1.1.md"
+            test -s "$ZIP_PATH" && test -s "$DMG_PATH" && test -s "$CHECKSUM_PATH" && test -s "$RELEASE_NOTES_PATH"
+            gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH" --verify-tag --title "SKALA Attendance $TAG" --notes-file "$RELEASE_NOTES_PATH"
 
       - name: Publish verified appcast after release creation
         env:

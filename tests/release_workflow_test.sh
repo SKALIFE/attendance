@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
 PROJECT="$ROOT/project.yml"
+RELEASE_NOTES="$ROOT/docs/releases/0.1.1.md"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -139,6 +140,8 @@ require_text 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' 'pinned
 require_text 'fetch-depth: 0' 'full history for ancestry validation'
 require_text 'persist-credentials: false' 'checkout credential persistence disabled'
 require_text 'DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer' 'explicit Xcode selection'
+require_text 'mint install yonaskolb/XcodeGen@2.42.0' 'pinned XcodeGen installation'
+require_text 'printf '\''%s\n'\'' "$HOME/.mint/bin" >>"$GITHUB_PATH"' 'XcodeGen Mint path export'
 
 require_text 'git merge-base --is-ancestor "$TAG_COMMIT" "origin/main"' 'tag commit must be reachable from main'
 require_text 'git status --porcelain' 'clean tagged checkout validation'
@@ -168,6 +171,8 @@ require_text '--release-probe scripts/verify-local-release-candidate.sh' 'local 
 require_text 'CHECKSUM_PATH="release/checksums.txt"' 'checksum artifact path'
 require_text 'shasum -a 256 "$ZIP_PATH" "$DMG_PATH" >"$CHECKSUM_PATH"' 'checksum-file generation'
 require_text 'gh release create "$TAG" "$ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH"' 'atomic ZIP, DMG, and checksum attachment'
+require_text 'RELEASE_NOTES_PATH="docs/releases/0.1.1.md"' 'v0.1.1 release notes path'
+require_text '--notes-file "$RELEASE_NOTES_PATH"' 'v0.1.1 release notes file'
 require_text 'SOURCE_APPCAST_SHA256' 'source appcast integrity snapshot'
 require_text 'test "$SOURCE_APPCAST_SHA256" = "$(shasum -a 256 tests/fixtures/current-appcast.xml' 'source appcast integrity check before release'
 require_text 'APPCAST_REPO_TOKEN: ${{ secrets.APPCAST_REPO_TOKEN }}' 'cross-repository appcast publication credential mapping'
@@ -179,6 +184,7 @@ require_text 'set +x' 'xtrace is explicitly disabled before appcast credential u
 require_text 'unset APPCAST_REPO_TOKEN' 'appcast credential is scrubbed after publisher setup'
 forbid_text '--write' 'source appcast mutation before publication'
 forbid_text 'gh release upload' 'release asset overwrite path'
+forbid_text '--generate-notes' 'generated release notes in place of the approved release notes file'
 forbid_text '--clobber' 'release asset overwrite path'
 forbid_text 'verify_update' 'obsolete Sparkle verifier binary'
 forbid_text 'checkouts/Sparkle/bin' 'Sparkle source checkout tool path'
@@ -199,6 +205,10 @@ done
 grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
 grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
 grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
+[ -f "$RELEASE_NOTES" ] || fail 'v0.1.1 Korean release notes are missing.'
+grep -Fq '# SKALA Attendance 0.1.1' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.1.'
+grep -Fq '업데이터와 배포 안정성을 개선했습니다.' "$RELEASE_NOTES" || fail 'Release notes must describe updater and distribution reliability improvements.'
+grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
 
 stage_line() {
@@ -206,6 +216,8 @@ stage_line() {
 }
 
 metadata_line=$(stage_line 'bash tests/release_metadata_test.sh')
+install_xcodegen_line=$(stage_line 'mint install yonaskolb/XcodeGen@2.42.0')
+generate_project_line=$(stage_line 'xcodegen generate')
 keychain_line=$(stage_line 'security create-keychain')
 release_build_line=$(stage_line 'xcodebuild build')
 unit_test_line=$(stage_line 'xcodebuild test')
@@ -220,11 +232,20 @@ candidate_line=$(stage_line 'bash scripts/generate-appcast-item.sh')
 source_guard_line=$(stage_line 'Verify source appcast is unchanged')
 release_line=$(stage_line 'gh release create "$TAG"')
 publisher_line=$(stage_line 'bash scripts/publish-appcast.sh')
-for line in "$metadata_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
+for line in "$metadata_line" "$install_xcodegen_line" "$generate_project_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
     [[ "$line" =~ ^[0-9]+$ ]] || fail 'Expected release stage is missing from the workflow.'
 done
-if ! (( metadata_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
-    fail 'GitHub Release creation must follow final artifact validation and source appcast integrity checks.'
+if ! (( metadata_line < install_xcodegen_line && install_xcodegen_line < generate_project_line && generate_project_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
+    fail 'Pinned XcodeGen installation and GitHub Release creation must follow the required release stage order.'
+fi
+
+if ! ruby -e '
+    contents = File.read(ARGV.fetch(0))
+    signed_build = /xcodebuild build \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\''/.match?(contents)
+    unsigned_test = /xcodebuild test \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\'' \\\n+\s+CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO\s*$/.match?(contents)
+    abort unless signed_build && unsigned_test
+' "$WORKFLOW"; then
+    fail 'Signed app build must remain unchanged and XCTest must end with both unsigned build settings.'
 fi
 
 printf 'Release workflow offline policy tests passed.\n'
