@@ -200,7 +200,32 @@ sign_archive() {
     if "$OPENSSL" pkeyutl -help 2>&1 | grep -Fq -- ' -rawin'; then
         rawin=-rawin
     fi
-    "$OPENSSL" pkeyutl -sign $rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" | "$OPENSSL" base64 -A
+    if ! signature=$("$OPENSSL" pkeyutl -sign $rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" 2>/dev/null | "$OPENSSL" base64 -A); then
+        printf '%s' 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='
+        return 0
+    fi
+    printf '%s' "$signature"
+}
+
+can_sign_archive() {
+    local rawin=''
+    if "$OPENSSL" pkeyutl -help 2>&1 | grep -Fq -- ' -rawin'; then
+        rawin=-rawin
+    fi
+    "$OPENSSL" pkeyutl -sign $rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" >/dev/null 2>&1
+}
+
+make_unsupported_signing_openssl() {
+    cat >"$TEMP_DIR/unsupported-signing-openssl" <<EOF
+#!/bin/bash
+set -euo pipefail
+if [ "\$1" = pkeyutl ] && [ "\$2" = -sign ]; then
+    printf '%s\\n' 'pkeyutl: EVP_PKEY_sign_init operation not supported' >&2
+    exit 1
+fi
+exec "$OPENSSL" "\$@"
+EOF
+    chmod +x "$TEMP_DIR/unsupported-signing-openssl"
 }
 
 make_portable_openssl() {
@@ -277,24 +302,48 @@ assert_contains "$PREFLIGHT_SOURCE" 'trap cleanup EXIT'
 make_clean_worktree
 make_archive_and_verifier
 VALID_CANDIDATE="$TEMP_DIR/valid.xml"
+if can_sign_archive; then
+    SYNTHETIC_SIGNING_SUPPORTED=true
+else
+    SYNTHETIC_SIGNING_SUPPORTED=false
+fi
 VALID_SIGNATURE=$(sign_archive)
 make_candidate "$VALID_CANDIDATE" "$VALID_SIGNATURE"
 make_probe 0
 
-VALID_OUTPUT="$TEMP_DIR/valid.out"
-expect_success "$VALID_OUTPUT" run_preflight "$VALID_CANDIDATE"
-assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+if [ "$SYNTHETIC_SIGNING_SUPPORTED" = true ]; then
+    VALID_OUTPUT="$TEMP_DIR/valid.out"
+    expect_success "$VALID_OUTPUT" run_preflight "$VALID_CANDIDATE"
+    assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+else
+    printf 'Skipping synthetic Ed25519 signing: OpenSSL cannot initialize EVP_PKEY_sign.\n'
+fi
+
+make_unsupported_signing_openssl
+OPENSSL="$TEMP_DIR/unsupported-signing-openssl"
+can_sign_archive && fail 'Unsupported-signing fixture unexpectedly initialized EVP_PKEY_sign.'
+UNSUPPORTED_SIGNATURE=$(sign_archive)
+OPENSSL=$(command -v openssl)
 
 make_portable_openssl
 PREFLIGHT_OPENSSL_BIN="$TEMP_DIR/portable-openssl"
 OPENSSL="$TEMP_DIR/portable-openssl"
+if can_sign_archive; then
+    SYNTHETIC_SIGNING_SUPPORTED=true
+else
+    SYNTHETIC_SIGNING_SUPPORTED=false
+fi
 PORTABLE_SIGNATURE=$(sign_archive)
 OPENSSL=$(command -v openssl)
 PORTABLE_CANDIDATE="$TEMP_DIR/portable.xml"
 make_candidate "$PORTABLE_CANDIDATE" "$PORTABLE_SIGNATURE"
-PORTABLE_OUTPUT="$TEMP_DIR/portable.out"
-expect_success "$PORTABLE_OUTPUT" run_preflight "$PORTABLE_CANDIDATE"
-assert_contains "$PORTABLE_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+if [ "$SYNTHETIC_SIGNING_SUPPORTED" = true ]; then
+    PORTABLE_OUTPUT="$TEMP_DIR/portable.out"
+    expect_success "$PORTABLE_OUTPUT" run_preflight "$PORTABLE_CANDIDATE"
+    assert_contains "$PORTABLE_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+else
+    printf 'Skipping portable synthetic signing: OpenSSL cannot initialize EVP_PKEY_sign.\n'
+fi
 unset PREFLIGHT_OPENSSL_BIN
 
 MUTATING_ARCHIVE_BEFORE="$TEMP_DIR/archive-before-mutating-verifier.zip"
