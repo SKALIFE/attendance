@@ -1,0 +1,76 @@
+name: Validate macOS runner setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/release-automation'
+    runs-on: macos-14
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - name: Check out validation branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Run offline release policy and preflight tests
+        run: |
+          set -euo pipefail
+          bash tests/release_workflow_test.sh
+          bash tests/release_metadata_test.sh
+          bash tests/release_preflight_test.sh
+          ruby tests/runner_setup_workflow_test.rb
+
+      - name: Generate Xcode project and resolve dependencies
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          xcodebuild -resolvePackageDependencies \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages"
+
+      - name: Import Developer ID certificate, build signed app, and test
+        env:
+          DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/skala-runner-validation.keychain-db"
+          P12_PATH="$RUNNER_TEMP/skala-runner-validation.p12"
+          ORIGINAL_KEYCHAIN=$(security default-keychain -d user | tr -d '"')
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          cleanup() {
+            security default-keychain -d user -s "$ORIGINAL_KEYCHAIN" >/dev/null 2>&1 || true
+            rm -f "$P12_PATH"
+            security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          printf '%s' "$DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 -D >"$P12_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -k "$KEYCHAIN_PATH" -P "$DEVELOPER_ID_APPLICATION_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)
+          test -n "$IDENTITY"
+          CODE_SIGN_IDENTITY="$IDENTITY" xcodebuild build \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/derived-data" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
+            -destination 'platform=macOS,arch=arm64'
+          CODE_SIGN_IDENTITY="$IDENTITY" xcodebuild test \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/derived-data" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
+            -destination 'platform=macOS,arch=arm64'
