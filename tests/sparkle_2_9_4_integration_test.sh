@@ -18,6 +18,11 @@ fail() {
     exit 1
 }
 
+RAWIN_OPTION=$(printf '%s%s' '-raw' 'in')
+if grep -Fq -- "$RAWIN_OPTION" "$0"; then
+    fail "Sparkle integration test must not use LibreSSL pkeyutl $RAWIN_OPTION verification."
+fi
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --tools-root)
@@ -65,18 +70,13 @@ write_project_with_public_key() {
     ' "$PROJECT" >"$destination"
 }
 
-verify_signature_with_project_key() {
-    local project=$1
-    local archive=$2
-    local signature=$3
-    local public_key
+verify_signature_with_sign_update() {
+    local archive=$1
+    local signature=$2
+    local private_key=$3
 
-    public_key=$(project_public_key "$project")
-    printf '\060\052\060\005\006\003\053\145\160\003\041\000' >"$TEMP_DIR/public-key.der"
-    printf '%s' "$public_key" | base64 -D >>"$TEMP_DIR/public-key.der"
-    printf '%s' "$signature" | base64 -D >"$TEMP_DIR/signature"
-    openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey "$TEMP_DIR/public-key.der" \
-        -in "$archive" -sigfile "$TEMP_DIR/signature" >/dev/null
+    printf '%s\n' "$private_key" | "$SIGN_UPDATE" --verify --ed-key-file - \
+        "$archive" "$signature" >/dev/null
 }
 
 SIGN_UPDATE="$TOOLS_ROOT/bin/sign_update"
@@ -134,7 +134,7 @@ env SPARKLE_EDDSA_PRIVATE_KEY="$PRIVATE_KEY" bash "$ROOT/scripts/generate-appcas
     --appcast "$GENERATOR_APPCAST" --project "$MATCHING_PROJECT" --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$GENERATOR_PROBE" >"$GENERATOR_OUTPUT"
 GENERATOR_SIGNATURE=$(awk -F 'sparkle:edSignature="' 'NF > 1 { split($2, value, "\""); print value[1]; exit }' "$GENERATOR_OUTPUT")
-verify_signature_with_project_key "$MATCHING_PROJECT" "$GENERATOR_ARCHIVE" "$GENERATOR_SIGNATURE" || fail 'Actual Sparkle 2.9.4 signature is incompatible with the matching project SUPublicEDKey.'
+verify_signature_with_sign_update "$GENERATOR_ARCHIVE" "$GENERATOR_SIGNATURE" "$PRIVATE_KEY" || fail 'Actual Sparkle 2.9.4 signature could not be verified by Sparkle sign_update.'
 
 MISMATCH_OUTPUT="$TEMP_DIR/mismatched-project.out"
 if env SPARKLE_EDDSA_PRIVATE_KEY="$PRIVATE_KEY" bash "$ROOT/scripts/generate-appcast-item.sh" \
