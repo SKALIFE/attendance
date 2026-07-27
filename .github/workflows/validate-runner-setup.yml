@@ -26,6 +26,13 @@ jobs:
           bash tests/release_preflight_test.sh
           ruby tests/runner_setup_workflow_test.rb
 
+      - name: Install pinned XcodeGen for validation
+        run: |
+          set -euo pipefail
+          brew install mint
+          mint install yonaskolb/XcodeGen@2.42.0
+          printf '%s\n' "$HOME/.mint/bin" >>"$GITHUB_PATH"
+
       - name: Generate Xcode project and resolve dependencies
         run: |
           set -euo pipefail

@@ -4,6 +4,9 @@ The `Validate macOS runner setup` workflow is dispatched manually from the
 `main` branch. Its job guard skips any other ref. It imports only
 the existing Developer ID signing certificate into a temporary keychain, then
 generates, builds, and tests the app without packaging or publishing output.
+Before generation, it installs the pinned XcodeGen `2.42.0` release through Mint
+and adds the local Mint bin directory to the runner path. This setup step is
+only for project generation; it does not publish or modify a release.
 
 ## Offline manual QA record
 

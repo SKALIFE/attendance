@@ -128,9 +128,15 @@ def validate_workflow!(contents, workflow)
     bash\ tests/release_workflow_test.sh
     bash\ tests/release_metadata_test.sh
     bash\ tests/release_preflight_test.sh
+    mint\ install\ yonaskolb/XcodeGen@2.42.0
+    printf\ '%s\\n'\ "$HOME/.mint/bin"\ >>"$GITHUB_PATH"
   ].each do |text|
     require_policy(contents.include?(text), "workflow is missing required validation: #{text}")
   end
+
+  install_line = contents.index("mint install yonaskolb/XcodeGen@2.42.0")
+  generate_line = contents.index("xcodegen generate")
+  require_policy(install_line && generate_line && install_line < generate_line, "workflow must install pinned XcodeGen before generation")
 end
 
 abort "Runner setup workflow is missing." unless File.file?(WORKFLOW)
