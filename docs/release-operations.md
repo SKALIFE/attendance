@@ -30,6 +30,25 @@ other repository. Rotate or revoke it if it is exposed. The workflow's built-in
 `github.token` creates the release in this repository; it is not a replacement
 for the cross-repository token.
 
+## Protected GitHub Environment migration
+
+Move release credentials to a protected GitHub Environment in a separately
+reviewed workflow change; this documentation change does not alter the current
+publication workflow. Create an environment named `release`, restrict its
+deployment branches and tags to the approved release policy (the `v*` tag
+pattern), and require reviewers before a job can access its secrets. If the
+repository plan supports it, add an appropriate wait timer as a second human
+review window.
+
+After the protection rules are active, set the release job's
+`environment: release` and add the eight existing release secret names to that
+Environment. Confirm a protected test run reaches the approval gate without
+printing a value, then remove the duplicate repository-level secrets. Do not
+move unrelated credentials into this Environment, weaken deployment branch
+restrictions, or remove a repository secret before the protected workflow has
+been reviewed and exercised. Environment protection is an approval boundary;
+it does not permit manual signing, publication, or appcast edits outside CI.
+
 ## Prepare, commit, push, and tag
 
 1. Pick the next semantic version and update `MARKETING_VERSION` in
@@ -53,14 +72,20 @@ bash scripts/release/preflight.sh v0.1.1 \
   --project tests/fixtures/release-0.1.1-build-2.yml \
   --appcast tests/fixtures/current-appcast.xml \
   --candidate /path/to/appcast-candidate.xml \
+  --archive /path/to/SKALA-Attendance-0.1.1-arm64.zip \
   --archive-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --sparkle-tools-root /path/to/pinned-sparkle-tools \
   --release-probe /path/to/release-probe
 ```
 
 The tag is the first argument. The command validates a clean Git worktree,
-release metadata, release-workflow policy, local candidate checks, candidate
-XML, URL, signature shape, and availability probe. It does not sign, notarize,
-contact GitHub, create a release, publish an appcast, or write the feed.
+release metadata, release-workflow policy, all offline release helper tests,
+candidate XML, URL, version/build uniqueness, archive digest and length, and
+availability probe. It resolves the pinned Sparkle `sign_update` artifact and
+verifies the local archive's Ed25519 signature with the project public key; no
+private Sparkle key is supplied.
+It does not sign, notarize, contact GitHub, create a release, publish an
+appcast, or write the feed.
 
 ## CI outputs and publication order
 

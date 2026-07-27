@@ -6,6 +6,7 @@ PREFLIGHT_SOURCE="$ROOT/scripts/release/preflight.sh"
 PREFLIGHT="$PREFLIGHT_SOURCE"
 DOCUMENTATION="$ROOT/docs/release-operations.md"
 FIXTURES="$ROOT/tests/fixtures"
+OPENSSL=$(command -v openssl)
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
@@ -59,6 +60,9 @@ require_documentation() {
         'SPARKLE_EDDSA_PRIVATE_KEY' \
         'APPCAST_REPO_TOKEN' \
         'least privilege' \
+        'Protected GitHub Environment migration' \
+        'environment: release' \
+        'require reviewers' \
         'MARKETING_VERSION' \
         'CURRENT_PROJECT_VERSION' \
         'git commit' \
@@ -91,26 +95,27 @@ make_candidate() {
     local destination=$1
     local signature=$2
     local duplicate=${3:-false}
-    local url='https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip'
+    local candidate_version=${4:-0.1.1}
+    local candidate_build=${5:-2}
 
     cat >"$destination" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
     <item>
-      <title>Version 0.1.1</title>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
-      <enclosure url="$url" length="123" type="application/octet-stream" sparkle:edSignature="$signature" />
+      <title>Version $candidate_version</title>
+      <sparkle:version>$candidate_build</sparkle:version>
+      <sparkle:shortVersionString>$candidate_version</sparkle:shortVersionString>
+      <enclosure url="$ARCHIVE_URL" length="$ARCHIVE_SIZE" type="application/octet-stream" sparkle:edSignature="$signature" />
     </item>
 EOF
     if [ "$duplicate" = true ]; then
         cat >>"$destination" <<EOF
     <item>
-      <title>Duplicate Version 0.1.1</title>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
-      <enclosure url="$url" length="123" type="application/octet-stream" sparkle:edSignature="$signature" />
+      <title>Duplicate Version $candidate_version</title>
+      <sparkle:version>$candidate_build</sparkle:version>
+      <sparkle:shortVersionString>$candidate_version</sparkle:shortVersionString>
+      <enclosure url="$ARCHIVE_URL" length="$ARCHIVE_SIZE" type="application/octet-stream" sparkle:edSignature="$signature" />
     </item>
 EOF
     fi
@@ -127,17 +132,95 @@ make_probe() {
 #!/bin/bash
 set -euo pipefail
 [ "\$#" = 3 ]
-[ "\$1" = 'https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip' ]
-[ "\$2" = 123 ]
-[ "\$3" = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' ]
+    [ "\$1" = '$ARCHIVE_URL' ]
+    [ "\$2" = '$ARCHIVE_SIZE' ]
+    [ "\$3" = '$ARCHIVE_DIGEST' ]
 exit $status
 EOF
     chmod +x "$TEMP_DIR/release-probe"
 }
 
+make_archive_and_verifier() {
+    local source="$TEMP_DIR/archive-source"
+
+    mkdir -p "$source/SKALA Attendance.app/Contents/MacOS"
+    printf 'preflight archive fixture\n' >"$source/SKALA Attendance.app/Contents/MacOS/SKALAAttendance"
+    ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.zip"
+    (cd "$source" && /usr/bin/zip -qry "$ARCHIVE" 'SKALA Attendance.app')
+    ARCHIVE_SIZE=$(stat -f '%z' "$ARCHIVE")
+    ARCHIVE_DIGEST=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+    ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip'
+
+    TEST_PRIVATE_KEY="$TEMP_DIR/disposable-ed25519-private.pem"
+    TEST_PUBLIC_PEM="$TEMP_DIR/disposable-ed25519-public.pem"
+    "$OPENSSL" genpkey -algorithm ED25519 -out "$TEST_PRIVATE_KEY"
+    "$OPENSSL" pkey -in "$TEST_PRIVATE_KEY" -pubout -out "$TEST_PUBLIC_PEM"
+    TEST_PUBLIC_KEY=$("$OPENSSL" pkey -pubin -in "$TEST_PUBLIC_PEM" -pubout -outform DER | dd bs=1 skip=12 2>/dev/null | "$OPENSSL" base64 -A)
+    TEST_PROJECT="$TEMP_DIR/project.yml"
+    awk -v public_key="$TEST_PUBLIC_KEY" '
+        /^[[:space:]]*MARKETING_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"0.1.1\"") }
+        /^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"2\"") }
+        /^[[:space:]]*SUPublicEDKey:[[:space:]]*/ { sub(/:.*/, ": " public_key) }
+        { print }
+    ' "$ROOT/project.yml" >"$TEST_PROJECT"
+
+    TOOLS_ROOT="$TEMP_DIR/sparkle-tools"
+    TOOLS_BIN="$TOOLS_ROOT/bin"
+    mkdir -p "$TOOLS_BIN"
+    make_sign_update
+}
+
+make_sign_update() {
+    cat >"$TOOLS_BIN/sign_update" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+exit 0
+EOF
+    chmod +x "$TOOLS_BIN/sign_update"
+}
+
+make_mutating_openssl() {
+    cat >"$TEMP_DIR/mutating-openssl" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -in ]; then
+        printf 'mutated by verifier\n' >>"$2"
+        exit 0
+    fi
+    shift
+done
+exit 1
+EOF
+    chmod +x "$TEMP_DIR/mutating-openssl"
+}
+
+sign_archive() {
+    "$OPENSSL" pkeyutl -sign -rawin -inkey "$TEST_PRIVATE_KEY" -in "$ARCHIVE" | "$OPENSSL" base64 -A
+}
+
+make_baseline_with_released_version() {
+    local destination=$1
+
+    awk '
+        /<channel>/ {
+            print
+            print "    <item>"
+            print "      <title>Released Version 0.1.1</title>"
+            print "      <sparkle:version>1</sparkle:version>"
+            print "      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>"
+            print "    </item>"
+            next
+        }
+        { print }
+    ' "$FIXTURES/current-appcast.xml" >"$destination"
+}
+
 make_clean_worktree() {
     CLEAN_WORKTREE="$TEMP_DIR/clean-worktree"
     cp -R "$ROOT" "$CLEAN_WORKTREE"
+    rm -rf "$CLEAN_WORKTREE/.git"
+    git -C "$CLEAN_WORKTREE" init -q
     git -C "$CLEAN_WORKTREE" add -A
     git -C "$CLEAN_WORKTREE" -c user.name='Preflight Test' -c user.email='test@example.invalid' \
         commit -qm 'Clean fixture'
@@ -145,24 +228,35 @@ make_clean_worktree() {
 }
 
 run_preflight() {
-    bash "$PREFLIGHT" v0.1.1 \
-        --project "$FIXTURES/release-0.1.1-build-2.yml" \
-        --appcast "$FIXTURES/current-appcast.xml" \
-        --candidate "$1" \
-        --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
+    local candidate=$1
+    local tag=${2:-v0.1.1}
+    local project=${3:-$TEST_PROJECT}
+    local appcast=${4:-$FIXTURES/current-appcast.xml}
+
+    env TMPDIR="$TEMP_DIR" OPENSSL_BIN="${PREFLIGHT_OPENSSL_BIN:-$OPENSSL}" bash "$PREFLIGHT" "$tag" \
+        --project "$project" \
+        --appcast "$appcast" \
+        --candidate "$candidate" \
+        --archive "$ARCHIVE" \
+        --archive-sha256 "$ARCHIVE_DIGEST" \
+        --sparkle-tools-root "$TOOLS_ROOT" \
         --release-probe "$TEMP_DIR/release-probe"
 }
 
 require_documentation
 [ -x "$PREFLIGHT_SOURCE" ] || fail 'Release preflight command is missing or not executable.'
 
-if grep -Eq '(codesign|notarytool|publish-appcast\.sh|generate-appcast-item\.sh|gh release|git push|(^|[^[:alnum:]_])mv[[:space:]]|(^|[^[:alnum:]_])cp[[:space:]])' "$PREFLIGHT_SOURCE"; then
+if grep -Eq '(codesign|notarytool|publish-appcast\.sh|generate-appcast-item\.sh|gh release|git push|(^|[^[:alnum:]_])mv[[:space:]])' "$PREFLIGHT_SOURCE"; then
     fail 'Preflight must not sign, notarize, publish, or mutate release inputs.'
 fi
+assert_contains "$PREFLIGHT_SOURCE" 'verification_archive=$(mktemp'
+assert_contains "$PREFLIGHT_SOURCE" 'cp -p "$archive" "$verification_archive"'
+assert_contains "$PREFLIGHT_SOURCE" 'trap cleanup EXIT'
 
 make_clean_worktree
+make_archive_and_verifier
 VALID_CANDIDATE="$TEMP_DIR/valid.xml"
-VALID_SIGNATURE='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='
+VALID_SIGNATURE=$(sign_archive)
 make_candidate "$VALID_CANDIDATE" "$VALID_SIGNATURE"
 make_probe 0
 
@@ -170,22 +264,49 @@ VALID_OUTPUT="$TEMP_DIR/valid.out"
 expect_success "$VALID_OUTPUT" run_preflight "$VALID_CANDIDATE"
 assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.1.'
 
+MUTATING_ARCHIVE_BEFORE="$TEMP_DIR/archive-before-mutating-verifier.zip"
+cp "$ARCHIVE" "$MUTATING_ARCHIVE_BEFORE"
+make_mutating_openssl
+PREFLIGHT_OPENSSL_BIN="$TEMP_DIR/mutating-openssl"
+MUTATING_VERIFIER_OUTPUT="$TEMP_DIR/mutating-verifier.out"
+expect_failure "$MUTATING_VERIFIER_OUTPUT" run_preflight "$VALID_CANDIDATE"
+assert_contains "$MUTATING_VERIFIER_OUTPUT" 'Verification archive changed during Sparkle verification.'
+cmp -s "$MUTATING_ARCHIVE_BEFORE" "$ARCHIVE" || fail 'Mutating verifier altered the original archive.'
+if compgen -G "$TEMP_DIR/skala-preflight-archive.*" >/dev/null; then
+    fail 'Preflight left its verification archive copy behind.'
+fi
+unset PREFLIGHT_OPENSSL_BIN
+
+ALL_A_OUTPUT="$TEMP_DIR/all-a-signature.out"
+ALL_A_CANDIDATE="$TEMP_DIR/all-a-signature.xml"
+make_candidate "$ALL_A_CANDIDATE" 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='
+expect_failure "$ALL_A_OUTPUT" run_preflight "$ALL_A_CANDIDATE"
+assert_contains "$ALL_A_OUTPUT" 'Sparkle signature verification failed.'
+
+DUPLICATE_RELEASED_BASELINE="$TEMP_DIR/duplicate-released-version.xml"
+make_baseline_with_released_version "$DUPLICATE_RELEASED_BASELINE"
+DUPLICATE_RELEASED_OUTPUT="$TEMP_DIR/duplicate-released-version.out"
+expect_failure "$DUPLICATE_RELEASED_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.1 "$TEST_PROJECT" "$DUPLICATE_RELEASED_BASELINE"
+assert_contains "$DUPLICATE_RELEASED_OUTPUT" 'Candidate version 0.1.1 already exists in baseline appcast.'
+
+MISMATCHED_VERSION_CANDIDATE="$TEMP_DIR/mismatched-version.xml"
+make_candidate "$MISMATCHED_VERSION_CANDIDATE" "$VALID_SIGNATURE" false 0.1.2 2
+MISMATCHED_VERSION_OUTPUT="$TEMP_DIR/mismatched-version.out"
+expect_failure "$MISMATCHED_VERSION_OUTPUT" run_preflight "$MISMATCHED_VERSION_CANDIDATE"
+assert_contains "$MISMATCHED_VERSION_OUTPUT" 'Candidate version 0.1.2 does not match release tag v0.1.1.'
+
+MISMATCHED_BUILD_CANDIDATE="$TEMP_DIR/mismatched-build.xml"
+make_candidate "$MISMATCHED_BUILD_CANDIDATE" "$VALID_SIGNATURE" false 0.1.1 3
+MISMATCHED_BUILD_OUTPUT="$TEMP_DIR/mismatched-build.out"
+expect_failure "$MISMATCHED_BUILD_OUTPUT" run_preflight "$MISMATCHED_BUILD_CANDIDATE"
+assert_contains "$MISMATCHED_BUILD_OUTPUT" 'Candidate build 3 does not match project build 2.'
+
 MISMATCH_OUTPUT="$TEMP_DIR/mismatch.out"
-expect_failure "$MISMATCH_OUTPUT" bash "$PREFLIGHT" v0.1.2 \
-    --project "$FIXTURES/release-0.1.1-build-2.yml" \
-    --appcast "$FIXTURES/current-appcast.xml" \
-    --candidate "$VALID_CANDIDATE" \
-    --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
-    --release-probe "$TEMP_DIR/release-probe"
+expect_failure "$MISMATCH_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.2
 assert_contains "$MISMATCH_OUTPUT" 'Tag v0.1.2 does not match marketing version 0.1.1.'
 
 STALE_OUTPUT="$TEMP_DIR/stale.out"
-expect_failure "$STALE_OUTPUT" bash "$PREFLIGHT" v0.1.1 \
-    --project "$FIXTURES/release-0.1.1-build-1.yml" \
-    --appcast "$FIXTURES/current-appcast.xml" \
-    --candidate "$VALID_CANDIDATE" \
-    --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
-    --release-probe "$TEMP_DIR/release-probe"
+expect_failure "$STALE_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.1 "$FIXTURES/release-0.1.1-build-1.yml"
 assert_contains "$STALE_OUTPUT" 'Build 1 must be greater than current appcast build 1.'
 
 DUPLICATE_CANDIDATE="$TEMP_DIR/duplicate.xml"
@@ -217,30 +338,36 @@ cp -R "$CLEAN_WORKTREE" "$DIRTY_WORKTREE"
 printf 'dirty\n' >"$DIRTY_WORKTREE/dirty-file"
 DIRTY_OUTPUT="$TEMP_DIR/dirty.out"
 expect_failure "$DIRTY_OUTPUT" bash "$DIRTY_WORKTREE/scripts/release/preflight.sh" v0.1.1 \
-    --project "$FIXTURES/release-0.1.1-build-2.yml" \
+    --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE" \
-    --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
+    --archive "$ARCHIVE" \
+    --archive-sha256 "$ARCHIVE_DIGEST" \
+    --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$TEMP_DIR/release-probe"
 assert_contains "$DIRTY_OUTPUT" 'Worktree has uncommitted changes.'
 
 INJECTION_MARKER="$TEMP_DIR/tag-injection-ran"
 TAG_INJECTION_OUTPUT="$TEMP_DIR/tag-injection.out"
 expect_failure "$TAG_INJECTION_OUTPUT" bash "$PREFLIGHT" "v0.1.1;touch $INJECTION_MARKER" \
-    --project "$FIXTURES/release-0.1.1-build-2.yml" \
+    --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE" \
-    --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
+    --archive "$ARCHIVE" \
+    --archive-sha256 "$ARCHIVE_DIGEST" \
+    --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$TEMP_DIR/release-probe"
 [ ! -e "$INJECTION_MARKER" ] || fail 'Tag injection was executed.'
 
 PATH_INJECTION_MARKER="$TEMP_DIR/path-injection-ran"
 PATH_INJECTION_OUTPUT="$TEMP_DIR/path-injection.out"
 expect_failure "$PATH_INJECTION_OUTPUT" bash "$PREFLIGHT" v0.1.1 \
-    --project "$FIXTURES/release-0.1.1-build-2.yml" \
+    --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE;touch $PATH_INJECTION_MARKER" \
-    --archive-sha256 '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' \
+    --archive "$ARCHIVE" \
+    --archive-sha256 "$ARCHIVE_DIGEST" \
+    --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$TEMP_DIR/release-probe"
 [ ! -e "$PATH_INJECTION_MARKER" ] || fail 'Path injection was executed.'
 
