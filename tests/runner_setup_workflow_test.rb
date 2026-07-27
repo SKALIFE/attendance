@@ -116,8 +116,10 @@ def validate_workflow!(contents, workflow)
     "release app build must remain signed"
   )
   require_policy(
-    contents.lines.count { |line| line.strip == "CODE_SIGNING_ALLOWED=NO xcodebuild test \\" } == 1,
-    "XCTest invocation must disable code signing"
+    contents.match?(
+      /xcodebuild test \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath "\$RUNNER_TEMP\/derived-data" \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination 'platform=macOS,arch=arm64' \\\n+\s+CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO\s*$/
+    ),
+    "XCTest invocation must end with both code-signing build settings"
   )
 
   %w[
@@ -131,7 +133,7 @@ def validate_workflow!(contents, workflow)
     rm\ -f\ "$P12_PATH"
     security\ find-identity\ -v\ -p\ codesigning
     CODE_SIGN_IDENTITY="$IDENTITY"\ xcodebuild\ build
-    CODE_SIGNING_ALLOWED=NO\ xcodebuild\ test
+    xcodebuild\ test
     xcodegen\ generate
     xcodebuild\ -resolvePackageDependencies
     bash\ tests/release_workflow_test.sh
@@ -187,14 +189,25 @@ secret_output_mutations.each do |name, unsafe_line|
 end
 
 missing_test_signing_flag = contents.sub(
-  "CODE_SIGNING_ALLOWED=NO xcodebuild test",
-  "xcodebuild test"
+  /CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO/,
+  "CODE_SIGNING_REQUIRED=NO"
 )
 begin
   validate_workflow!(missing_test_signing_flag, YAML.safe_load(missing_test_signing_flag, aliases: false))
 rescue PolicyError
 else
   raise "Missing XCTest signing flag was not rejected."
+end
+
+misplaced_test_signing_flag = contents.sub(
+  /CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO/,
+  "CODE_SIGNING_ALLOWED=NO xcodebuild test"
+)
+begin
+  validate_workflow!(misplaced_test_signing_flag, YAML.safe_load(misplaced_test_signing_flag, aliases: false))
+rescue PolicyError
+else
+  raise "Misplaced XCTest signing flags were not rejected."
 end
 
 puts "Runner setup workflow offline policy and YAML parser checks passed."
