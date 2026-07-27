@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
 PROJECT="$ROOT/project.yml"
-RELEASE_NOTES="$ROOT/docs/releases/0.1.7.md"
+RELEASE_NOTES="$ROOT/docs/releases/0.1.8.md"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -251,8 +251,8 @@ done
 grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
 grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
 grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
-[ -f "$RELEASE_NOTES" ] || fail 'v0.1.7 Korean release notes are missing.'
-grep -Fq '# SKALA Attendance 0.1.7' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.7.'
+[ -f "$RELEASE_NOTES" ] || fail 'v0.1.8 Korean release notes are missing.'
+grep -Fq '# SKALA Attendance 0.1.8' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.8.'
 grep -Fq '업데이터와 배포 안정성을 개선했습니다.' "$RELEASE_NOTES" || fail 'Release notes must describe updater and distribution reliability improvements.'
 grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
