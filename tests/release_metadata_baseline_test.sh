@@ -15,9 +15,9 @@ assert_contains() {
     fi
 }
 
-assert_contains "$PROJECT" 'MARKETING_VERSION: "0.1.4"'
-assert_contains "$PROJECT" 'CURRENT_PROJECT_VERSION: "5"'
+assert_contains "$PROJECT" 'MARKETING_VERSION: "0.1.5"'
+assert_contains "$PROJECT" 'CURRENT_PROJECT_VERSION: "6"'
 assert_contains "$APPCAST" '<sparkle:version>1</sparkle:version>'
 assert_contains "$APPCAST" '<sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>'
 
-printf 'Baseline metadata fixture supports marketing version 0.1.4 and build 5 over released build 1.\n'
+printf 'Baseline metadata fixture supports marketing version 0.1.5 and build 6 over released build 1.\n'
