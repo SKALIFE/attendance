@@ -111,6 +111,15 @@ def validate_workflow!(contents, workflow)
     require_policy(!contents.include?(text), "workflow must not contain prohibited publication capability: #{text}")
   end
 
+  require_policy(
+    contents.lines.count { |line| line.strip == 'CODE_SIGN_IDENTITY="$IDENTITY" xcodebuild build \\' } == 1,
+    "release app build must remain signed"
+  )
+  require_policy(
+    contents.lines.count { |line| line.strip == "CODE_SIGNING_ALLOWED=NO xcodebuild test \\" } == 1,
+    "XCTest invocation must disable code signing"
+  )
+
   %w[
     security\ create-keychain
     security\ import
@@ -122,7 +131,7 @@ def validate_workflow!(contents, workflow)
     rm\ -f\ "$P12_PATH"
     security\ find-identity\ -v\ -p\ codesigning
     CODE_SIGN_IDENTITY="$IDENTITY"\ xcodebuild\ build
-    CODE_SIGN_IDENTITY="$IDENTITY"\ xcodebuild\ test
+    CODE_SIGNING_ALLOWED=NO\ xcodebuild\ test
     xcodegen\ generate
     xcodebuild\ -resolvePackageDependencies
     bash\ tests/release_workflow_test.sh
@@ -175,6 +184,17 @@ secret_output_mutations.each do |name, unsafe_line|
     next
   end
   raise "Unsafe workflow mutation #{name} was not rejected."
+end
+
+missing_test_signing_flag = contents.sub(
+  "CODE_SIGNING_ALLOWED=NO xcodebuild test",
+  "xcodebuild test"
+)
+begin
+  validate_workflow!(missing_test_signing_flag, YAML.safe_load(missing_test_signing_flag, aliases: false))
+rescue PolicyError
+else
+  raise "Missing XCTest signing flag was not rejected."
 end
 
 puts "Runner setup workflow offline policy and YAML parser checks passed."

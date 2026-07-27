@@ -74,7 +74,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/derived-data" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -destination 'platform=macOS,arch=arm64'
-          CODE_SIGN_IDENTITY="$IDENTITY" xcodebuild test \
+          CODE_SIGNING_ALLOWED=NO xcodebuild test \
             -project SKALAAttendance.xcodeproj \
             -scheme SKALAAttendance \
             -configuration Release \
