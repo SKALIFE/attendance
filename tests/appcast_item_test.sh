@@ -5,7 +5,27 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 GENERATOR="$ROOT/scripts/generate-appcast-item.sh"
 FIXTURES="$ROOT/tests/fixtures"
 PROJECT="$ROOT/project.yml"
-OPENSSL=$(command -v openssl)
+
+OPENSSL_CANDIDATES=()
+[ -n "${OPENSSL_BIN:-}" ] && OPENSSL_CANDIDATES+=("$OPENSSL_BIN")
+OPENSSL_CANDIDATES+=(
+    "$(command -v openssl || true)"
+    /opt/homebrew/opt/openssl@3/bin/openssl
+    /usr/local/opt/openssl@3/bin/openssl
+)
+OPENSSL=''
+for candidate in "${OPENSSL_CANDIDATES[@]}"; do
+    [ -x "$candidate" ] || continue
+    if "$candidate" list -public-key-algorithms 2>/dev/null | grep -Fq ED25519 \
+        && "$candidate" pkeyutl -help 2>&1 | grep -Fq -- '-rawin'; then
+        OPENSSL="$candidate"
+        break
+    fi
+done
+[ -n "$OPENSSL" ] || {
+    printf '%s\n' 'No executable OpenSSL with Ed25519 and pkeyutl -rawin support was found.' >&2
+    exit 1
+}
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
