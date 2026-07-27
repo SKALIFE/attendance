@@ -18,3 +18,7 @@ SKALAAttendance.xcodeproj/
 
 # Release artifacts
 release/
+
+# Agent working artifacts (never commit)
+.omo/
+.playwright-mcp/
