@@ -17,6 +17,10 @@ error() {
     exit 1
 }
 
+pkeyutl_rawin_supported() {
+    "$OPENSSL_BIN" pkeyutl -help 2>&1 | grep -Fq -- ' -rawin'
+}
+
 cleanup() {
     [ -z "$verification_archive" ] || rm -f "$verification_archive"
     [ -z "$verification_public_key" ] || rm -f "$verification_public_key"
@@ -232,7 +236,11 @@ verification_signature=$(mktemp "${TMPDIR:-/tmp}/skala-preflight-signature.XXXXX
 printf '\060\052\060\005\006\003\053\145\160\003\041\000' >"$verification_public_key"
 printf '%s' "$public_key" | /usr/bin/base64 -D >>"$verification_public_key" || error 'Project SUPublicEDKey is missing or malformed.'
 printf '%s' "$candidate_signature" | /usr/bin/base64 -D >"$verification_signature" || error 'Candidate appcast item must contain one Sparkle EdDSA signature.'
-"$OPENSSL_BIN" pkeyutl -verify -rawin -pubin -keyform DER -inkey "$verification_public_key" -in "$verification_archive" -sigfile "$verification_signature" >/dev/null 2>&1 || error 'Sparkle signature verification failed.'
+if pkeyutl_rawin_supported; then
+    "$OPENSSL_BIN" pkeyutl -verify -rawin -pubin -keyform DER -inkey "$verification_public_key" -in "$verification_archive" -sigfile "$verification_signature" >/dev/null 2>&1
+else
+    "$OPENSSL_BIN" pkeyutl -verify -pubin -keyform DER -inkey "$verification_public_key" -in "$verification_archive" -sigfile "$verification_signature" >/dev/null 2>&1
+fi || error 'Sparkle signature verification failed.'
 verification_size=$(stat -f '%z' "$verification_archive") || error 'Unable to determine verification archive size.'
 verification_digest=$(shasum -a 256 "$verification_archive" | awk '{print $1}') || error 'Unable to digest verification archive.'
 [ "$verification_size" = "$archive_size" ] && [ "$verification_digest" = "$archive_digest" ] || error 'Verification archive changed during Sparkle verification.'
