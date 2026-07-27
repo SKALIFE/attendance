@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
+PROJECT="$ROOT/project.yml"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -152,6 +153,9 @@ require_text 'bash tests/notarize_test.sh' 'notarization helper test'
 require_text 'bash tests/appcast_item_test.sh' 'appcast helper test'
 require_text 'bash tests/publish_appcast_test.sh' 'appcast publisher helper test'
 require_text 'bash tests/verify_release_zip_test.sh' 'release ZIP download verifier test'
+require_text 'bash tests/sparkle_2_9_4_integration_test.sh' 'real Sparkle 2.9.4 layout and CLI integration probe'
+require_text 'source-packages/artifacts/sparkle/Sparkle' 'resolved Sparkle 2.9.4 binary artifact root'
+require_text 'test -x "$SPARKLE_TOOLS_ROOT/bin/sign_update"' 'resolved Sparkle 2.9.4 sign_update executable probe'
 require_text 'bash scripts/package-release.sh' 'local package helper invocation'
 require_text 'bash scripts/notarize.sh' 'local notarization helper invocation'
 require_text 'bash scripts/notarize.sh --app "$APP_PATH"' 'app notarization before final archive creation'
@@ -176,6 +180,8 @@ require_text 'unset APPCAST_REPO_TOKEN' 'appcast credential is scrubbed after pu
 forbid_text '--write' 'source appcast mutation before publication'
 forbid_text 'gh release upload' 'release asset overwrite path'
 forbid_text '--clobber' 'release asset overwrite path'
+forbid_text 'verify_update' 'obsolete Sparkle verifier binary'
+forbid_text 'checkouts/Sparkle/bin' 'Sparkle source checkout tool path'
 forbid_text 'continue-on-error' 'failure bypass'
 forbid_text 'if: always()' 'failure bypass'
 forbid_text 'if: ${{ always() }}' 'failure bypass'
@@ -189,6 +195,10 @@ for portable_test in tests/package_release_test.sh tests/notarize_test.sh; do
 done
 [ -x "$ROOT/scripts/verify-local-release-candidate.sh" ] || fail 'Local candidate release probe is missing or not executable.'
 [ -x "$ROOT/scripts/ensure-release-absent.sh" ] || fail 'Release duplicate guard is missing or not executable.'
+[ -x "$ROOT/tests/sparkle_2_9_4_integration_test.sh" ] || fail 'Sparkle 2.9.4 integration probe is missing or not executable.'
+grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
+grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
+grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
 
 stage_line() {
@@ -196,6 +206,9 @@ stage_line() {
 }
 
 metadata_line=$(stage_line 'bash tests/release_metadata_test.sh')
+keychain_line=$(stage_line 'security create-keychain')
+release_build_line=$(stage_line 'xcodebuild build')
+unit_test_line=$(stage_line 'xcodebuild test')
 package_line=$(stage_line 'bash scripts/package-release.sh')
 app_notarize_line=$(stage_line 'bash scripts/notarize.sh --app "$APP_PATH"')
 zip_rebuild_line=$(stage_line 'Rebuild ZIP from stapled app')
@@ -207,10 +220,10 @@ candidate_line=$(stage_line 'bash scripts/generate-appcast-item.sh')
 source_guard_line=$(stage_line 'Verify source appcast is unchanged')
 release_line=$(stage_line 'gh release create "$TAG"')
 publisher_line=$(stage_line 'bash scripts/publish-appcast.sh')
-for line in "$metadata_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
+for line in "$metadata_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
     [[ "$line" =~ ^[0-9]+$ ]] || fail 'Expected release stage is missing from the workflow.'
 done
-if ! (( metadata_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
+if ! (( metadata_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
     fail 'GitHub Release creation must follow final artifact validation and source appcast integrity checks.'
 fi
 

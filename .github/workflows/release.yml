@@ -47,10 +47,7 @@ jobs:
       - name: Run release metadata tests
         run: bash tests/release_metadata_test.sh
 
-      - name: Run package helper tests
-        run: bash tests/package_release_test.sh
-
-      - name: Generate Xcode project and build arm64 Release app
+      - name: Generate Xcode project and resolve Sparkle
         run: |
           set -euo pipefail
           xcodegen generate
@@ -58,20 +55,8 @@ jobs:
             -project SKALAAttendance.xcodeproj \
             -scheme SKALAAttendance \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages"
-          xcodebuild build \
-            -project SKALAAttendance.xcodeproj \
-            -scheme SKALAAttendance \
-            -configuration Release \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
-            -destination 'platform=macOS,arch=arm64'
-          xcodebuild test \
-            -project SKALAAttendance.xcodeproj \
-            -scheme SKALAAttendance \
-            -configuration Release \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
-            -destination 'platform=macOS,arch=arm64'
 
-      - name: Import Developer ID certificate and package signed app
+      - name: Import Developer ID certificate, build signed app, test, and package
         env:
           DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
           DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
@@ -96,8 +81,28 @@ jobs:
           security default-keychain -d user -s "$KEYCHAIN_PATH"
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)
           test -n "$IDENTITY"
+          xcodebuild build \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -configuration Release \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
+            -destination 'platform=macOS,arch=arm64'
+          xcodebuild test \
+            -project SKALAAttendance.xcodeproj \
+            -scheme SKALAAttendance \
+            -configuration Release \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
+            -destination 'platform=macOS,arch=arm64'
+          APP_PATH='build/Build/Products/Release/SKALA Attendance.app'
+          bash tests/sparkle_2_9_4_integration_test.sh \
+            --tools-root "$RUNNER_TEMP/source-packages/artifacts/sparkle/Sparkle" \
+            --app "$APP_PATH"
+          bash tests/package_release_test.sh
           VERSION="${GITHUB_REF_NAME#v}"
           bash scripts/package-release.sh \
+            --app "$APP_PATH" \
             --version "$VERSION" \
             --identity "$IDENTITY"
 
@@ -186,10 +191,8 @@ jobs:
           ZIP_PATH="release/SKALA-Attendance-${VERSION}-arm64.zip"
           APPCAST_BASELINE="$RUNNER_TEMP/appcast-baseline.xml"
           APPCAST_CANDIDATE="release/appcast-candidate.xml"
-          SPARKLE_TOOLS_ROOT="$RUNNER_TEMP/sparkle-tools"
-          SPARKLE_BIN="$RUNNER_TEMP/source-packages/checkouts/Sparkle/bin"
-          mkdir -p "$SPARKLE_TOOLS_ROOT/2.9.4/bin"
-          cp "$SPARKLE_BIN/sign_update" "$SPARKLE_BIN/verify_update" "$SPARKLE_TOOLS_ROOT/2.9.4/bin/"
+          SPARKLE_TOOLS_ROOT="$RUNNER_TEMP/source-packages/artifacts/sparkle/Sparkle"
+          test -x "$SPARKLE_TOOLS_ROOT/bin/sign_update"
            SOURCE_APPCAST_SHA256=$(shasum -a 256 tests/fixtures/current-appcast.xml | awk '{print $1}')
            printf 'SOURCE_APPCAST_SHA256=%s\n' "$SOURCE_APPCAST_SHA256" >>"$GITHUB_ENV"
           cp tests/fixtures/current-appcast.xml "$APPCAST_BASELINE"
