@@ -21,6 +21,13 @@ require_text() {
     grep -Fq -- "$text" "$WORKFLOW" || fail "Missing workflow policy: $description"
 }
 
+assert_contains() {
+    local file=$1
+    local expected=$2
+
+    grep -Fq -- "$expected" "$file" || fail "Expected $file to contain: $expected"
+}
+
 forbid_text() {
     local text=$1
     local description=$2
@@ -169,7 +176,38 @@ require_text 'bash scripts/notarize.sh --app "$APP_PATH"' 'app notarization befo
 require_text 'rm -f "$ZIP_PATH" "$DMG_PATH"' 'removal of pre-staple package artifacts'
 require_text 'Rebuild ZIP from stapled app' 'ZIP recreation stage'
 require_text 'Create and notarize DMG from stapled app' 'DMG finalization stage'
+require_text 'KEYCHAIN_PATH="$RUNNER_TEMP/skala-dmg-release.keychain-db"' 'final DMG signing keychain path'
+require_text 'P12_PATH="$RUNNER_TEMP/skala-dmg-release.p12"' 'final DMG certificate path'
+require_text 'unset DEVELOPER_ID_APPLICATION_P12_BASE64 DEVELOPER_ID_APPLICATION_P12_PASSWORD' 'final DMG signing secret scrub'
+require_text 'security default-keychain -d user -s "$ORIGINAL_KEYCHAIN"' 'final DMG default keychain restoration'
+require_text 'security delete-keychain "$KEYCHAIN_PATH"' 'final DMG keychain cleanup'
+require_text 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --sign "$IDENTITY" "$DMG_PATH"' 'Developer ID signature for final DMG'
+require_text 'codesign --verify --strict --verbose=4 "$DMG_PATH"' 'final DMG signature verification'
+require_text 'grep -Fxq -- "Authority=$IDENTITY" <<<"$SIGNATURE_DETAILS"' 'final DMG authority verification'
+require_text 'grep -Fxq -- "TeamIdentifier=$APPLE_TEAM_ID" <<<"$SIGNATURE_DETAILS"' 'final DMG team verification'
+require_text "grep -Eq '^Timestamp=.+$' <<<\"\$SIGNATURE_DETAILS\"" 'final DMG secure timestamp verification'
 require_text 'bash scripts/notarize.sh --dmg "$DMG_PATH" --zip "$ZIP_PATH"' 'DMG notarization and rebuilt ZIP validation'
+
+FINAL_DMG_STEP="$TEMP_DIR/final-dmg-step.yml"
+awk '
+    /- name: Create and notarize DMG from stapled app/ { capture = 1 }
+    capture && /- name: Generate checksums for final release artifacts/ { exit }
+    capture { print }
+' "$WORKFLOW" >"$FINAL_DMG_STEP"
+for final_dmg_policy in \
+    'DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}' \
+    'DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}' \
+    'printf '\''%s'\'' "$DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 -D >"$P12_PATH"' \
+    'trap cleanup EXIT' \
+    'security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"' \
+    'security import "$P12_PATH" -k "$KEYCHAIN_PATH"' \
+    'IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH"' \
+    'security default-keychain -d user -s "$ORIGINAL_KEYCHAIN"' \
+    'rm -f "$P12_PATH"' \
+    'security delete-keychain "$KEYCHAIN_PATH"' \
+    'unset DEVELOPER_ID_APPLICATION_P12_BASE64 DEVELOPER_ID_APPLICATION_P12_PASSWORD'; do
+    assert_contains "$FINAL_DMG_STEP" "$final_dmg_policy"
+done
 require_text 'bash scripts/generate-appcast-item.sh' 'real artifact appcast candidate validation'
 require_text '--release-probe scripts/verify-local-release-candidate.sh' 'local candidate release probe'
 require_text 'CHECKSUM_PATH="release/checksums.txt"' 'checksum artifact path'
@@ -256,6 +294,12 @@ package_line=$(stage_line 'bash scripts/package-release.sh')
 app_notarize_line=$(stage_line 'bash scripts/notarize.sh --app "$APP_PATH"')
 zip_rebuild_line=$(stage_line 'Rebuild ZIP from stapled app')
 final_dmg_line=$(stage_line 'Create and notarize DMG from stapled app')
+dmg_create_line=$(stage_line 'hdiutil create \')
+dmg_sign_line=$(stage_line 'codesign --force --timestamp --identifier kr.skalife.attendance.disk-image --sign "$IDENTITY" "$DMG_PATH"')
+dmg_verify_line=$(stage_line 'codesign --verify --strict --verbose=4 "$DMG_PATH"')
+dmg_authority_line=$(stage_line 'grep -Fxq -- "Authority=$IDENTITY" <<<"$SIGNATURE_DETAILS"')
+dmg_team_line=$(stage_line 'grep -Fxq -- "TeamIdentifier=$APPLE_TEAM_ID" <<<"$SIGNATURE_DETAILS"')
+dmg_timestamp_line=$(stage_line "grep -Eq '^Timestamp=.+$' <<<\"\$SIGNATURE_DETAILS\"")
 notarize_line=$(stage_line 'bash scripts/notarize.sh --dmg "$DMG_PATH" --zip "$ZIP_PATH"')
 checksum_line=$(stage_line 'shasum -a 256 "$ZIP_PATH" "$DMG_PATH" >"$CHECKSUM_PATH"')
 appcast_line=$(stage_line 'bash tests/appcast_item_test.sh')
@@ -263,10 +307,10 @@ candidate_line=$(stage_line 'bash scripts/generate-appcast-item.sh')
 source_guard_line=$(stage_line 'Verify source appcast is unchanged')
 release_line=$(stage_line 'gh release create "$TAG"')
 publisher_line=$(stage_line 'bash scripts/publish-appcast.sh')
-for line in "$metadata_line" "$install_xcodegen_line" "$generate_project_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
+for line in "$metadata_line" "$install_xcodegen_line" "$generate_project_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$dmg_create_line" "$dmg_sign_line" "$dmg_verify_line" "$dmg_authority_line" "$dmg_team_line" "$dmg_timestamp_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
     [[ "$line" =~ ^[0-9]+$ ]] || fail 'Expected release stage is missing from the workflow.'
 done
-if ! (( metadata_line < install_xcodegen_line && install_xcodegen_line < generate_project_line && generate_project_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
+if ! (( metadata_line < install_xcodegen_line && install_xcodegen_line < generate_project_line && generate_project_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < dmg_create_line && dmg_create_line < dmg_sign_line && dmg_sign_line < dmg_verify_line && dmg_verify_line < dmg_authority_line && dmg_authority_line < dmg_team_line && dmg_team_line < dmg_timestamp_line && dmg_timestamp_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
     fail 'Pinned XcodeGen installation and GitHub Release creation must follow the required release stage order.'
 fi
 
