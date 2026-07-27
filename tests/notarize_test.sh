@@ -125,6 +125,13 @@ set -euo pipefail
     printf ' <%s>' "$@"
     printf '\n'
 } >>"$NOTARIZE_COMMAND_LOG"
+
+artifact=${!#}
+if [[ "$artifact" == *.dmg ]]; then
+    arguments=" $* "
+    [[ "$arguments" == *' --type open '* ]] || exit 96
+    [[ "$arguments" == *' --context context:primary-signature '* ]] || exit 97
+fi
 EOF
 cat >"$TEMP_DIR/bin/unzip" <<'EOF'
 #!/bin/bash
@@ -265,6 +272,7 @@ fi
 assert_contains "$TEMP_DIR/success.commands" "<submit> <$DMG>"
 assert_contains "$TEMP_DIR/success.commands" '<stapler> <validate>'
 assert_contains "$TEMP_DIR/success.commands" 'spctl <--assess> <--verbose=4>'
+assert_contains "$TEMP_DIR/success.commands" "spctl <--assess> <--type> <open> <--context> <context:primary-signature> <--verbose=4> <$DMG>"
 [ "$(cat "$TEMP_DIR/key-mode")" = '600' ] || fail 'The temporary API-key file must be mode 600.'
 [ ! -e "$(cat "$TEMP_DIR/key-path")" ] || fail 'The temporary API-key file was not deleted.'
 [ ! -e "$TEMP_DIR/success-environment-violation" ] || fail 'The private API-key environment reached a child tool.'

@@ -59,6 +59,8 @@ submit_for_notarization() {
 
 staple_and_assess() {
     local artifact=$1
+    local assessment_type=${2:-execute}
+    local assessment_details
 
     if ! xcrun stapler staple "$artifact" >/dev/null 2>&1; then
         error 'Stapling failed.'
@@ -68,9 +70,24 @@ staple_and_assess() {
         error 'Stapler validation failed.'
     fi
 
-    if ! spctl --assess --verbose=4 "$artifact" >/dev/null 2>&1; then
-        error 'Gatekeeper assessment failed.'
+    case "$assessment_type" in
+        open)
+            if assessment_details=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$artifact" 2>&1); then
+                return
+            fi
+            ;;
+        execute)
+            if assessment_details=$(spctl --assess --verbose=4 "$artifact" 2>&1); then
+                return
+            fi
+            ;;
+        *) error 'Unsupported Gatekeeper assessment type.' ;;
+    esac
+
+    if [ -n "$assessment_details" ]; then
+        printf 'Gatekeeper assessment failed for %s:\n%s\n' "$artifact" "$assessment_details" >&2
     fi
+    error 'Gatekeeper assessment failed.'
 }
 
 notarize_app() {
@@ -217,7 +234,7 @@ if [ -n "$app_path" ]; then
 fi
 if [ -n "$dmg_path" ]; then
     submit_for_notarization "$dmg_path"
-    staple_and_assess "$dmg_path"
+    staple_and_assess "$dmg_path" open
 fi
 if [ -n "$zip_path" ]; then
     verify_zip_app "$zip_path" "$version"
