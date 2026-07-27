@@ -274,9 +274,13 @@ if ! ruby -e '
     contents = File.read(ARGV.fetch(0))
     signed_build = /xcodebuild build \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\''/.match?(contents)
     unsigned_test = /xcodebuild test \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\'' \\\n+\s+CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO\s*$/.match?(contents)
-    abort unless signed_build && unsigned_test
+     abort unless signed_build && contents.include?(%q{-derivedDataPath "$RUNNER_TEMP/test-derived-data"}) && contents.include?(%q{CODE_SIGNING_ALLOWED=NO}) && contents.include?(%q{CODE_SIGNING_REQUIRED=NO})
 ' "$WORKFLOW"; then
     fail 'Signed app build must remain unchanged and XCTest must end with both unsigned build settings.'
+fi
+
+if grep -F -- 'xcodebuild test' "$WORKFLOW" | grep -F -- '-derivedDataPath build' >/dev/null; then
+    fail 'Regression: XCTest must not share build derived data with the signed app (run 30274749016 removed Sparkle _CodeSignature).'
 fi
 
 printf 'Release workflow offline policy tests passed.\n'

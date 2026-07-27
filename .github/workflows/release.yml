@@ -105,7 +105,7 @@ jobs:
             -project SKALAAttendance.xcodeproj \
             -scheme SKALAAttendance \
             -configuration Release \
-            -derivedDataPath build \
+            -derivedDataPath "$RUNNER_TEMP/test-derived-data" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -destination 'platform=macOS,arch=arm64' \
             CODE_SIGNING_ALLOWED=NO \
