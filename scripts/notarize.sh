@@ -1,55 +1,209 @@
 #!/bin/bash
 set -euo pipefail
 
-PROFILE="skala-notary"
-DMG="release/SKALA-Attendance-0.1.0-arm64.dmg"
-APPLE_ID="dayeon.dev@gmail.com"
-TEAM_ID="9XY8538U7T"
+case $- in
+    *x*) set +x ;;
+esac
 
-echo "=== SKALA Attendance Notarization ==="
-echo ""
+usage() {
+    printf 'Usage: %s [--app path/to/SKALA\ Attendance.app] [--dmg path/to/SKALA-Attendance-X.Y.Z-arm64.dmg] [--zip path/to/SKALA-Attendance-X.Y.Z-arm64.zip]\n' "${0##*/}" >&2
+    exit 2
+}
 
-# Step 1: Check if credentials are stored
-if ! xcrun notarytool history --keychain-profile "$PROFILE" &>/dev/null; then
-    echo "App-specific password is needed."
-    echo "If you don't have one, create it at:"
-    echo "  https://appleid.apple.com → Sign In → App-Specific Passwords → Generate"
-    echo ""
-    echo "Enter your app-specific password when prompted:"
-    xcrun notarytool store-credentials "$PROFILE" \
-        --apple-id "$APPLE_ID" \
-        --team-id "$TEAM_ID"
-    echo ""
-    echo "Credentials stored successfully."
+error() {
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+require_environment() {
+    local name=$1
+
+    [ -n "${!name:-}" ] || error "$name is required."
+}
+
+read_app_version() {
+    local app_path=$1
+    local version
+
+    [ -d "$app_path" ] && [ -f "$app_path/Contents/Info.plist" ] || error 'Notarization artifact is missing or invalid.'
+    version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist" 2>/dev/null) || error 'Notarization artifact is missing or invalid.'
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || error 'Notarization artifact is missing or invalid.'
+    printf '%s\n' "$version"
+}
+
+read_archive_version() {
+    local archive_path=$1
+    local extension=$2
+    local archive_name=${archive_path##*/}
+
+    [ -f "$archive_path" ] || error 'Notarization artifact is missing or invalid.'
+    if [[ "$archive_name" =~ ^SKALA-Attendance-([0-9]+\.[0-9]+\.[0-9]+)-arm64\.$extension$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return
+    fi
+
+    error 'Notarization artifact is missing or invalid.'
+}
+
+notarize_and_staple() {
+    local artifact=$1
+
+    if ! xcrun notarytool submit "$artifact" \
+        --key "$key_path" \
+        --key-id "$APP_STORE_CONNECT_KEY_ID" \
+        --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+        --wait >/dev/null 2>&1; then
+        error 'Notarization submission failed.'
+    fi
+
+    if ! xcrun stapler staple "$artifact" >/dev/null 2>&1; then
+        error 'Stapling failed.'
+    fi
+
+    if ! xcrun stapler validate "$artifact" >/dev/null 2>&1; then
+        error 'Stapler validation failed.'
+    fi
+
+    if ! spctl --assess --verbose=4 "$artifact" >/dev/null 2>&1; then
+        error 'Gatekeeper assessment failed.'
+    fi
+}
+
+verify_zip_app() {
+    local zip_path=$1
+    local expected_version=$2
+    local extracted_app
+    local extracted_version
+
+    zip_temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/skala-notary-zip.XXXXXX" 2>/dev/null) || error 'ZIP verification failed.'
+    if ! unzip -q "$zip_path" -d "$zip_temp_dir" >/dev/null 2>&1; then
+        error 'ZIP verification failed.'
+    fi
+
+    extracted_app="$zip_temp_dir/SKALA Attendance.app"
+    extracted_version=$(read_app_version "$extracted_app")
+    [ "$extracted_version" = "$expected_version" ] || error 'Artifact versions do not match.'
+
+    if ! xcrun stapler validate "$extracted_app" >/dev/null 2>&1; then
+        error 'Stapler validation failed.'
+    fi
+
+    if ! spctl --assess --verbose=4 "$extracted_app" >/dev/null 2>&1; then
+        error 'Gatekeeper assessment failed.'
+    fi
+}
+
+app_path=
+dmg_path=
+zip_path=
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --app)
+            [ "$#" -ge 2 ] || usage
+            [ -z "$app_path" ] || usage
+            app_path=$2
+            shift 2
+            ;;
+        --dmg)
+            [ "$#" -ge 2 ] || usage
+            [ -z "$dmg_path" ] || usage
+            dmg_path=$2
+            shift 2
+            ;;
+        --zip)
+            [ "$#" -ge 2 ] || usage
+            [ -z "$zip_path" ] || usage
+            zip_path=$2
+            shift 2
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+
+private_key_material=
+export -n private_key_material
+if [ -n "${APP_STORE_CONNECT_PRIVATE_KEY_BASE64+x}" ]; then
+    private_key_material=$APP_STORE_CONNECT_PRIVATE_KEY_BASE64
+fi
+unset APP_STORE_CONNECT_PRIVATE_KEY_BASE64
+
+[ -n "$app_path$dmg_path$zip_path" ] || error 'A notarization artifact is required.'
+
+app_version=
+dmg_version=
+zip_version=
+if [ -n "$app_path" ]; then
+    app_version=$(read_app_version "$app_path")
+fi
+if [ -n "$dmg_path" ]; then
+    dmg_version=$(read_archive_version "$dmg_path" dmg)
+fi
+if [ -n "$zip_path" ]; then
+    zip_version=$(read_archive_version "$zip_path" zip)
 fi
 
-# Step 2: Submit DMG for notarization
-echo ""
-echo "=== Submitting DMG to Apple ==="
-SUBMISSION=$(xcrun notarytool submit \
-    --keychain-profile "$PROFILE" \
-    "$DMG" --json 2>/dev/null)
+version=${app_version:-${dmg_version:-$zip_version}}
+for artifact_version in "$app_version" "$dmg_version" "$zip_version"; do
+    [ -z "$artifact_version" ] || [ "$artifact_version" = "$version" ] || error 'Artifact versions do not match.'
+done
 
-SUBMISSION_ID=$(echo "$SUBMISSION" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "unknown")
-echo "Submission ID: $SUBMISSION_ID"
+require_environment APPLE_TEAM_ID
+require_environment APP_STORE_CONNECT_ISSUER_ID
+require_environment APP_STORE_CONNECT_KEY_ID
+[ -n "$private_key_material" ] || error 'APP_STORE_CONNECT_PRIVATE_KEY_BASE64 is required.'
 
-# Step 3: Wait for completion
-echo ""
-echo "=== Waiting for notarization (this can take 2-10 minutes) ==="
-xcrun notarytool wait "$SUBMISSION_ID" \
-    --keychain-profile "$PROFILE"
+key_path=
+zip_temp_dir=
+cleanup() {
+    local cleanup_failed=0
 
-# Step 4: Staple
-echo ""
-echo "=== Stapling ticket to DMG ==="
-xcrun stapler staple "$DMG"
+    if [ -n "$key_path" ] && [ -e "$key_path" ] && ! rm -f "$key_path" >/dev/null 2>&1; then
+        cleanup_failed=1
+    fi
+    if [ -n "$zip_temp_dir" ] && [ -e "$zip_temp_dir" ] && ! rm -rf "$zip_temp_dir" >/dev/null 2>&1; then
+        cleanup_failed=1
+    fi
 
-# Step 5: Verify
-echo ""
-echo "=== Verification ==="
-spctl --assess --verbose=4 "$DMG" 2>&1
-xcrun stapler validate "$DMG"
+    [ "$cleanup_failed" -eq 0 ]
+}
 
-echo ""
-echo "=== Notarization complete! ==="
-echo "The DMG will now open without Gatekeeper warnings."
+on_exit() {
+    local status=$?
+
+    trap - EXIT
+    if ! cleanup; then
+        printf 'Temporary credential cleanup failed.\n' >&2
+        exit 1
+    fi
+    exit "$status"
+}
+trap on_exit EXIT
+trap 'exit 1' HUP INT TERM
+
+key_path=$(mktemp "${TMPDIR:-/tmp}/skala-notary-key.XXXXXX" 2>/dev/null) || error 'Unable to prepare notarization credentials.'
+chmod 600 "$key_path" >/dev/null 2>&1 || error 'Unable to prepare notarization credentials.'
+if ! printf '%s' "$private_key_material" | /usr/bin/env -u APP_STORE_CONNECT_PRIVATE_KEY_BASE64 /usr/bin/base64 -D >"$key_path" 2>/dev/null || [ ! -s "$key_path" ]; then
+    unset private_key_material
+    error 'The private API-key secret is invalid.'
+fi
+unset private_key_material
+
+if [ -n "$app_path" ]; then
+    notarize_and_staple "$app_path"
+fi
+if [ -n "$dmg_path" ]; then
+    notarize_and_staple "$dmg_path"
+fi
+if [ -n "$zip_path" ]; then
+    verify_zip_app "$zip_path" "$version"
+fi
+
+if ! cleanup; then
+    trap - EXIT
+    error 'Temporary credential cleanup failed.'
+fi
+trap - EXIT
+printf 'Notarization completed.\n'

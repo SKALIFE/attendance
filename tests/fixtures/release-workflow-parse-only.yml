@@ -1,0 +1,13 @@
+name: Parse-only insecure fixture
+
+on:
+  pull_request_target:
+
+permissions:
+  contents: write
+
+jobs:
+  unsafe:
+    runs-on: macos-14
+    steps:
+      - run: echo parsed-but-unsafe
