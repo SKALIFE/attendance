@@ -44,6 +44,7 @@ snapshot_worktree_contents() {
 
     GIT_MASTER=1 git -C "$worktree" ls-files -co --exclude-standard -z |
         while IFS= read -r -d '' path; do
+            [ -f "$worktree/$path" ] || continue
             shasum -a 256 "$worktree/$path"
         done | sort >"$snapshot"
 }
@@ -81,6 +82,12 @@ fi
 
 if [ "$1" = "notarytool" ] && [ "$2" = "submit" ]; then
     artifact_path=$3
+    [ -f "$artifact_path" ] || exit 90
+    case "$artifact_path" in
+        *.zip) /usr/bin/unzip -tqq "$artifact_path" >/dev/null || exit 89 ;;
+        *.dmg) ;;
+        *) exit 88 ;;
+    esac
     key_path=
     while [ "$#" -gt 0 ]; do
         if [ "$1" = "--key" ]; then
@@ -97,9 +104,17 @@ if [ "$1" = "notarytool" ] && [ "$2" = "submit" ]; then
     exit "${FAKE_NOTARY_EXIT:-0}"
 fi
 
-if [ "$1" = "stapler" ] && [ "$2" = "validate" ] && [[ "$3" == *'/skala-notary-zip.'* ]]; then
+if [ "$1" = "stapler" ] && [ "$2" = "staple" ] && [ -d "$3" ]; then
+    mkdir -p "$3/Contents/_CodeSignature"
+    : >"$3/Contents/_CodeSignature/stapled-fixture"
+fi
+
+if [ "$1" = "stapler" ] && [ "$2" = "validate" ] && [ -d "$3" ]; then
     [ -f "$3/Contents/Info.plist" ] || exit 94
-    printf '%s\n' "$3" >"$NOTARIZE_EXTRACTED_APP_PATH"
+    [ -f "$3/Contents/_CodeSignature/stapled-fixture" ] || exit 95
+    if [[ "$3" == *'/skala-notary-zip.'* ]]; then
+        printf '%s\n' "$3" >"$NOTARIZE_EXTRACTED_APP_PATH"
+    fi
 fi
 EOF
 cat >"$TEMP_DIR/bin/spctl" <<'EOF'
@@ -139,14 +154,9 @@ chmod +x "$TEMP_DIR/bin/xcrun" "$TEMP_DIR/bin/spctl" "$TEMP_DIR/bin/unzip" "$TEM
 
 APP="$TEMP_DIR/SKALA Attendance.app"
 DMG="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.dmg"
-ZIP="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.zip"
+STAPLED_ZIP="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.zip"
 MISMATCHED_DMG="$TEMP_DIR/SKALA-Attendance-0.1.2-arm64.dmg"
 make_app "$APP"
-make_app "$TEMP_DIR/zip-source/SKALA Attendance.app"
-(
-    cd "$TEMP_DIR/zip-source"
-    /usr/bin/zip -qr "$ZIP" 'SKALA Attendance.app'
-)
 touch "$DMG" "$MISMATCHED_DMG"
 snapshot_worktree_contents "$ROOT" "$TEMP_DIR/target-contents-before.sha256"
 
@@ -225,6 +235,12 @@ run_success_case() {
         APP_STORE_CONNECT_PRIVATE_KEY_BASE64='LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t' \
         bash "$NOTARIZE" --app "$APP"
 
+    (
+        cd "$(dirname "$APP")"
+        /usr/bin/zip -qr "$STAPLED_ZIP" 'SKALA Attendance.app'
+    )
+    /usr/bin/unzip -Z1 "$STAPLED_ZIP" | grep -Fx 'SKALA Attendance.app/Contents/_CodeSignature/stapled-fixture' >/dev/null || fail 'Final ZIP must contain the stapled app fixture path.'
+
     env \
         PATH="$TEMP_DIR/bin:$PATH" \
         NOTARIZE_COMMAND_LOG="$command_log" \
@@ -238,7 +254,7 @@ run_success_case() {
         APP_STORE_CONNECT_ISSUER_ID='test-issuer' \
         APP_STORE_CONNECT_KEY_ID='test-key-id' \
         APP_STORE_CONNECT_PRIVATE_KEY_BASE64='LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t' \
-        bash "$NOTARIZE" --dmg "$DMG" --zip "$ZIP"
+        bash "$NOTARIZE" --dmg "$DMG" --zip "$STAPLED_ZIP"
 }
 
 SUCCESS_OUTPUT="$TEMP_DIR/success.out"
@@ -246,14 +262,14 @@ if ! run_success_case "$TEMP_DIR/success.commands" "$TEMP_DIR/key-path" "$TEMP_D
     cat "$SUCCESS_OUTPUT" >&2
     fail 'Expected headless notarization fixture success.'
 fi
-assert_contains "$TEMP_DIR/success.commands" "<submit> <$APP>"
 assert_contains "$TEMP_DIR/success.commands" "<submit> <$DMG>"
 assert_contains "$TEMP_DIR/success.commands" '<stapler> <validate>'
 assert_contains "$TEMP_DIR/success.commands" 'spctl <--assess> <--verbose=4>'
 [ "$(cat "$TEMP_DIR/key-mode")" = '600' ] || fail 'The temporary API-key file must be mode 600.'
 [ ! -e "$(cat "$TEMP_DIR/key-path")" ] || fail 'The temporary API-key file was not deleted.'
 [ ! -e "$TEMP_DIR/success-environment-violation" ] || fail 'The private API-key environment reached a child tool.'
-[ "$(cat "$TEMP_DIR/success-submissions")" = "$APP"$'\n'"$DMG" ] || fail 'App and DMG submission paths or order are incorrect.'
+assert_not_contains "$TEMP_DIR/success-submissions" "$APP"
+assert_contains "$TEMP_DIR/success-submissions" "$DMG"
 [ -n "$(cat "$TEMP_DIR/extracted-app-path")" ] || fail 'The actual ZIP app was not validated.'
 assert_not_contains "$SUCCESS_OUTPUT" 'PRIVATE KEY'
 
@@ -270,7 +286,7 @@ if ! env \
     APP_STORE_CONNECT_ISSUER_ID='test-issuer' \
     APP_STORE_CONNECT_KEY_ID='test-key-id' \
     APP_STORE_CONNECT_PRIVATE_KEY_BASE64='LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t' \
-    bash "$NOTARIZE" --zip "$ZIP" >"$ZIP_ONLY_OUTPUT" 2>&1; then
+        bash "$NOTARIZE" --zip "$STAPLED_ZIP" >"$ZIP_ONLY_OUTPUT" 2>&1; then
     cat "$ZIP_ONLY_OUTPUT" >&2
     fail 'Expected rebuilt ZIP validation success without a notarization submission.'
 fi

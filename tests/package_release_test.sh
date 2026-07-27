@@ -34,6 +34,7 @@ snapshot_worktree_contents() {
 
     git -C "$worktree" ls-files -co --exclude-standard -z |
         while IFS= read -r -d '' path; do
+            [ -f "$worktree/$path" ] || continue
             shasum -a 256 "$worktree/$path"
         done | sort >"$snapshot"
 }
@@ -43,8 +44,12 @@ make_app() {
     local version=$2
     local executable="$app_path/Contents/MacOS/SKALA Attendance"
     local sparkle_root="$app_path/Contents/Frameworks/Sparkle.framework/Versions/B"
+    local updater="$sparkle_root/Updater.app/Contents/MacOS/Updater"
+    local downloader="$sparkle_root/XPCServices/Downloader.xpc/Contents/MacOS/Downloader"
+    local installer="$sparkle_root/XPCServices/Installer.xpc/Contents/MacOS/Installer"
 
-    mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" "$sparkle_root"
+    mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" \
+        "$(dirname "$updater")" "$(dirname "$downloader")" "$(dirname "$installer")"
     cat >"$app_path/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,9 +57,10 @@ make_app() {
 EOF
     : >"$executable"
     : >"$sparkle_root/Autoupdate"
-    : >"$sparkle_root/fileop"
-    : >"$sparkle_root/InstallerLauncher"
-    chmod +x "$executable" "$sparkle_root/Autoupdate" "$sparkle_root/fileop" "$sparkle_root/InstallerLauncher"
+    : >"$updater"
+    : >"$downloader"
+    : >"$installer"
+    chmod +x "$executable" "$sparkle_root/Autoupdate" "$updater" "$downloader" "$installer"
     printf 'linked resource\n' >"$app_path/Contents/Resources/real-resource"
     ln -s real-resource "$app_path/Contents/Resources/resource-link"
 }
@@ -144,11 +150,14 @@ ZIP="$OUTPUT_DIR/SKALA-Attendance-0.1.1-arm64.zip"
 assert_contains "$SUCCESS_OUTPUT" "Created: $DMG"
 assert_contains "$SUCCESS_OUTPUT" "Created: $ZIP"
 assert_contains "$TEMP_DIR/success.commands" "<--verify> <--deep> <--strict> <--verbose=2> <$APP>"
-for helper in Autoupdate fileop InstallerLauncher; do
-    helper_path="$APP/Contents/Frameworks/Sparkle.framework/Versions/B/$helper"
+for helper_path in \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"; do
     assert_contains "$TEMP_DIR/success.commands" "<--verify> <--strict> <--verbose=2> <$helper_path>"
     assert_contains "$TEMP_DIR/success.commands" "<--force> <--options> <runtime> <--sign> <Developer ID Application: Test Identity (TEAMID)> <--timestamp> <$helper_path>"
-    [ "$(grep -Fc "<--verify> <--strict> <--verbose=2> <$helper_path>" "$TEMP_DIR/success.commands")" = 2 ] || fail "Expected post-sign verification for $helper."
+    [ "$(grep -Fc "<--verify> <--strict> <--verbose=2> <$helper_path>" "$TEMP_DIR/success.commands")" = 1 ] || fail "Expected post-sign verification for $helper_path."
 done
 [ "$(grep -Fc "<--verify> <--strict> <--verbose=2> <$APP>" "$TEMP_DIR/success.commands")" = 2 ] || fail 'Expected post-sign verification for the app.'
 [ "$(grep -Fc "<--verify> <--deep> <--strict> <--verbose=2> <$APP>" "$TEMP_DIR/success.commands")" = 2 ] || fail 'Expected post-sign deep verification for the app.'

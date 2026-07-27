@@ -45,7 +45,7 @@ read_archive_version() {
     error 'Notarization artifact is missing or invalid.'
 }
 
-notarize_and_staple() {
+submit_for_notarization() {
     local artifact=$1
 
     if ! xcrun notarytool submit "$artifact" \
@@ -55,6 +55,10 @@ notarize_and_staple() {
         --wait >/dev/null 2>&1; then
         error 'Notarization submission failed.'
     fi
+}
+
+staple_and_assess() {
+    local artifact=$1
 
     if ! xcrun stapler staple "$artifact" >/dev/null 2>&1; then
         error 'Stapling failed.'
@@ -67,6 +71,18 @@ notarize_and_staple() {
     if ! spctl --assess --verbose=4 "$artifact" >/dev/null 2>&1; then
         error 'Gatekeeper assessment failed.'
     fi
+}
+
+notarize_app() {
+    local app=$1
+
+    app_archive_dir=$(mktemp -d "${TMPDIR:-/tmp}/skala-notary-app.XXXXXX" 2>/dev/null) || error 'Unable to prepare app notarization archive.'
+    app_archive="$app_archive_dir/SKALA Attendance.zip"
+    if ! /usr/bin/ditto -c -k --keepParent "$app" "$app_archive" >/dev/null 2>&1; then
+        error 'Unable to prepare app notarization archive.'
+    fi
+    submit_for_notarization "$app_archive"
+    staple_and_assess "$app"
 }
 
 verify_zip_app() {
@@ -157,6 +173,8 @@ require_environment APP_STORE_CONNECT_KEY_ID
 
 key_path=
 zip_temp_dir=
+app_archive_dir=
+app_archive=
 cleanup() {
     local cleanup_failed=0
 
@@ -164,6 +182,9 @@ cleanup() {
         cleanup_failed=1
     fi
     if [ -n "$zip_temp_dir" ] && [ -e "$zip_temp_dir" ] && ! rm -rf "$zip_temp_dir" >/dev/null 2>&1; then
+        cleanup_failed=1
+    fi
+    if [ -n "$app_archive_dir" ] && [ -e "$app_archive_dir" ] && ! rm -rf "$app_archive_dir" >/dev/null 2>&1; then
         cleanup_failed=1
     fi
 
@@ -192,10 +213,11 @@ fi
 unset private_key_material
 
 if [ -n "$app_path" ]; then
-    notarize_and_staple "$app_path"
+    notarize_app "$app_path"
 fi
 if [ -n "$dmg_path" ]; then
-    notarize_and_staple "$dmg_path"
+    submit_for_notarization "$dmg_path"
+    staple_and_assess "$dmg_path"
 fi
 if [ -n "$zip_path" ]; then
     verify_zip_app "$zip_path" "$version"

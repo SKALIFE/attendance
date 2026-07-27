@@ -101,34 +101,32 @@ built_architecture=$(lipo -archs "$app_executable") || error 'Unable to determin
 [ "$built_architecture" = "$architecture" ] || error "Built app architecture must be $architecture; found $built_architecture."
 
 sparkle_root="$app_path/Contents/Frameworks/Sparkle.framework/Versions/B"
-sparkle_helpers=(
+sparkle_code_units=(
     "$sparkle_root/Autoupdate"
-    "$sparkle_root/fileop"
-    "$sparkle_root/InstallerLauncher"
+    "$sparkle_root/Updater.app"
+    "$sparkle_root/XPCServices/Downloader.xpc"
+    "$sparkle_root/XPCServices/Installer.xpc"
 )
-for helper_path in "${sparkle_helpers[@]}"; do
-    [ -f "$helper_path" ] || error "Sparkle helper is missing: $helper_path"
+for code_path in "${sparkle_code_units[@]}"; do
+    [ -e "$code_path" ] || error "Sparkle code unit is missing: $code_path"
 done
 
 if ! codesign --verify --deep --strict --verbose=2 "$app_path" >/dev/null 2>&1; then
     error 'Existing signature verification failed.'
 fi
 verify_code_unit "$app_path" 'Existing signature verification failed.'
-for helper_path in "${sparkle_helpers[@]}"; do
-    verify_code_unit "$helper_path" 'Existing signature verification failed.'
-done
 
-sign_code_unit "${sparkle_helpers[0]}"
-sign_code_unit "${sparkle_helpers[1]}"
-sign_code_unit "${sparkle_helpers[2]}"
+for code_path in "${sparkle_code_units[@]}"; do
+    sign_code_unit "$code_path"
+done
 sign_code_unit "$app_path"
 
 if ! codesign --verify --deep --strict --verbose=2 "$app_path" >/dev/null 2>&1; then
     error 'Post-sign signature verification failed.'
 fi
 verify_code_unit "$app_path" 'Post-sign signature verification failed.'
-for helper_path in "${sparkle_helpers[@]}"; do
-    verify_code_unit "$helper_path" 'Post-sign signature verification failed.'
+for code_path in "${sparkle_code_units[@]}"; do
+    verify_code_unit "$code_path" 'Post-sign signature verification failed.'
 done
 
 mkdir -p "$output_dir"
