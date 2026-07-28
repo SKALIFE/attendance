@@ -92,6 +92,7 @@ set -euo pipefail
 [ "\$3" = "$EXPECTED_DIGEST" ] || exit 74
 [ -z "\${APPCAST_REPO_TOKEN+x}" ] || exit 75
 [ -z "\${LEAK_MARKER+x}" ] || exit 76
+printf 'Release ZIP download verified.\n'
 EOF
     chmod +x "$PROBE"
 }
@@ -205,6 +206,7 @@ remote_file appcast.xml >"$UPDATED_APPCAST"
 assert_contains "$UPDATED_APPCAST" '<sparkle:version>2</sparkle:version>'
 assert_contains "$UPDATED_APPCAST" "url=\"$EXPECTED_URL\""
 assert_contains "$UPDATED_APPCAST" '<sparkle:version>1</sparkle:version>'
+assert_not_contains "$UPDATED_APPCAST" 'Release ZIP download verified.'
 xmllint --nonet --noout "$UPDATED_APPCAST"
 assert_unchanged "$INITIAL_README" <(remote_file README.md)
 

@@ -121,7 +121,7 @@ length=$(printf '%s' "$item" | awk -v archive_url="$archive_url" '
 ') || error 'Candidate appcast item must contain one release enclosure with a numeric length.'
 
 printf '%s' "$item" | grep -Eq 'sparkle:edSignature="[A-Za-z0-9+/]{86}=="' || error 'Candidate appcast item is missing a valid Sparkle EdDSA signature.'
-env -i PATH=/usr/bin:/bin "$release_probe" "$archive_url" "$length" "$archive_sha256" || error 'Release asset availability check failed.'
+env -i PATH=/usr/bin:/bin "$release_probe" "$archive_url" "$length" "$archive_sha256" >/dev/null || error 'Release asset availability check failed.'
 
 if [ "$print_item" = true ]; then
     printf '%s' "$item"
