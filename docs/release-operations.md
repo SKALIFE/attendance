@@ -30,24 +30,53 @@ other repository. Rotate or revoke it if it is exposed. The workflow's built-in
 `github.token` creates the release in this repository; it is not a replacement
 for the cross-repository token.
 
-## Protected GitHub Environment migration
+## Protected `appcast-publish` environment
 
-Move release credentials to a protected GitHub Environment in a separately
-reviewed workflow change; this documentation change does not alter the current
-publication workflow. Create an environment named `release`, restrict its
-deployment branches and tags to the approved release policy (the `v*` tag
-pattern), and require reviewers before a job can access its secrets. If the
-repository plan supports it, add an appropriate wait timer as a second human
-review window.
+The `publish-appcast` job is the sole appcast publication boundary. Configure
+the GitHub Environment named `appcast-publish` before enabling releases:
 
-After the protection rules are active, set the release job's
-`environment: release` and add the eight existing release secret names to that
-Environment. Confirm a protected test run reaches the approval gate without
-printing a value, then remove the duplicate repository-level secrets. Do not
-move unrelated credentials into this Environment, weaken deployment branch
-restrictions, or remove a repository secret before the protected workflow has
-been reviewed and exercised. Environment protection is an approval boundary;
-it does not permit manual signing, publication, or appcast edits outside CI.
+```yaml
+environment: appcast-publish
+```
+
+1. Restrict deployment branches and tags to the approved `v*` release-tag
+   policy.
+2. Enable required reviewers and assign the approved release reviewers. At
+   least one reviewer must approve each publication; do not allow self-review
+   where the repository plan offers that control.
+3. Scope `APPCAST_REPO_TOKEN` to this Environment only. Do not put signing,
+   notarization, or unrelated repository credentials in it.
+
+An explicitly approved single-operator exception may use the sole operator as
+the required reviewer with self-review allowed. This remains a manual pause,
+not independent approval. Do not create a second account controlled by the
+same person to simulate separation of duties. Record the exception, keep the
+workflow disabled until GitHub can enforce the required-reviewer rule, and
+replace self-review with another trusted reviewer when one becomes available.
+
+The release job builds, signs, notarizes, creates the GitHub Release, and
+uploads the generated `appcast-candidate.xml` as a short-lived workflow
+artifact. It has no appcast publisher invocation or appcast token. The
+dependent `publish-appcast` job cannot start until the Environment approval is
+granted. It checks out the tagged source without persisted credentials,
+downloads that candidate, and anonymously downloads and verifies the released
+ZIP against the release job's immutable URL, size, and SHA-256 outputs before
+it invokes the publisher. The appcast token is unavailable during this
+anonymous verification step and is mapped only for the subsequent publisher.
+
+No appcast publication may occur before approval. A created GitHub Release is
+not authorization to edit the update feed. Do not manually edit the feed,
+bypass the Environment, replay the candidate with a local token, or weaken the
+reviewer and tag restrictions.
+
+If a Sparkle signing key is suspected compromised, stop at the Environment
+approval gate and follow the incident procedure before publishing a new feed
+item. Key rotation must preserve a verifiable transition for already installed
+versions; it cannot make an already compromised signing key trustworthy. Keep
+the same Developer ID Application team identity for update releases: the final
+notarized app must report the configured `APPLE_TEAM_ID`. Coordinate any
+Developer ID or update-key transition with the Sparkle compatibility and
+incident owners rather than publishing a manual feed edit.
 
 ## Prepare, commit, push, and tag
 
@@ -55,8 +84,15 @@ it does not permit manual signing, publication, or appcast edits outside CI.
    `project.yml` to that version without the `v` prefix.
 2. Increase `CURRENT_PROJECT_VERSION` to a decimal build number greater than
    the newest build already present in the appcast. Do not reuse a build number.
-3. Run the ordinary local checks, review the version-only diff, then create a
-   version-bump commit. For example: `git commit -am 'chore: release 0.1.1'`.
+3. Run the ordinary local checks and review the complete diff, including
+   untracked release notes. Stage every intended path explicitly; for a normal
+   version bump, for example:
+   `git add -- project.yml docs/releases/0.1.1.md`. If the release includes
+   other reviewed workflow, generated metadata, test, or documentation
+   changes, add those exact paths as well rather than using `git add -A`.
+   Run `git diff --cached --check`, inspect `git diff --cached`, and confirm
+   `git status --short` shows no intended release file left unstaged. Then
+   create the commit with `git commit -m 'chore: release 0.1.1'`.
 4. Push that reviewed commit to `main`: `git push origin main`. The tag must
    point at a commit reachable from `main`.
 5. Create the annotated tag from that exact commit, for example:
@@ -96,11 +132,14 @@ GitHub Release contains these outputs:
 - `SKALA-Attendance-<version>-arm64.dmg`
 - `checksums.txt`
 
-The appcast candidate is generated and validated before release creation. Only
-after the GitHub Release and its assets exist does CI publish that candidate to
-the separate appcast repository. The appcast publication is therefore the last
-public availability step; a green build or created release alone does not mean
-the update feed has changed.
+The appcast candidate is generated and validated before release creation. Once
+the GitHub Release and assets exist, the release job hands the candidate to the
+approval-gated `publish-appcast` job as a short-lived artifact. After an
+`appcast-publish` reviewer approves it, that job anonymously verifies the
+released ZIP's immutable URL, byte size, and SHA-256 before it can publish the
+candidate to the separate appcast repository. The appcast publication is the
+last public availability step; a green build or created release alone does not
+mean the update feed has changed.
 
 ## Rollback before feed publication
 
@@ -108,12 +147,13 @@ Before the tag is pushed, correct the version bump or candidate, remove the
 unpublished local tag if one was made, and make a new reviewed commit. Do not
 push an unreviewed release tag.
 
-If the tag-triggered workflow has started but has not yet published the feed,
-the existing appcast remains unchanged. Stop escalation, preserve CI logs and
-the candidate for diagnosis, and do not manually edit the feed or overwrite
-the tag or release. Fix forward with a new version and build after the failure
-is understood. Once feed publication has completed, follow the appcast
-repository's incident procedure rather than attempting an in-place rewrite.
+If the tag-triggered workflow has started but the Environment has not approved
+publication, the existing appcast remains unchanged. Stop escalation, preserve
+CI logs and the candidate for diagnosis, and do not manually edit the feed or
+overwrite the tag or release. Fix forward with a new version and build after
+the failure is understood. Once feed publication has completed, follow the
+appcast repository's incident procedure rather than attempting an in-place
+rewrite.
 
 ## CI GUI boundary
 

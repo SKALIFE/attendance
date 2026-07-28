@@ -60,11 +60,15 @@ require_documentation() {
         'SPARKLE_EDDSA_PRIVATE_KEY' \
         'APPCAST_REPO_TOKEN' \
         'least privilege' \
-        'Protected GitHub Environment migration' \
-        'environment: release' \
-        'require reviewers' \
+        'Protected `appcast-publish` environment' \
+        'environment: appcast-publish' \
+        'required reviewers' \
+        'single-operator exception' \
+        'Do not create a second account' \
         'MARKETING_VERSION' \
         'CURRENT_PROJECT_VERSION' \
+        'git add -- project.yml docs/releases/0.1.1.md' \
+        'git diff --cached --check' \
         'git commit' \
         'git push origin main' \
         'git tag -a' \
@@ -75,6 +79,8 @@ require_documentation() {
         'scripts/release/preflight.sh v0.1.1'; do
         assert_contains "$DOCUMENTATION" "$text"
     done
+
+    assert_not_contains "$DOCUMENTATION" 'git commit -am'
 
     for secret in \
         DEVELOPER_ID_APPLICATION_P12_BASE64 \

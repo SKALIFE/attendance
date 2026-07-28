@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
 PROJECT="$ROOT/project.yml"
-RELEASE_NOTES="$ROOT/docs/releases/0.1.8.md"
+RELEASE_NOTES="$ROOT/docs/releases/0.1.9.md"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -64,7 +64,11 @@ if ! ruby -e '
     abort unless trigger.keys == ["push"]
     abort unless trigger.fetch("push").keys == ["tags"]
     abort unless trigger.fetch("push").fetch("tags") == ["v*"]
-    abort unless workflow.fetch("permissions") == { "contents" => "write" }
+    abort unless workflow.fetch("permissions") == { "contents" => "read" }
+    release = workflow.fetch("jobs").fetch("release")
+    publish_appcast = workflow.fetch("jobs").fetch("publish-appcast")
+    abort unless release.fetch("permissions") == { "contents" => "write" }
+    abort if publish_appcast.key?("permissions")
     workflow.fetch("jobs").each_value do |job|
       abort if job.key?("if") || job.key?("continue-on-error")
       job.fetch("steps", []).each do |step|
@@ -73,6 +77,108 @@ if ! ruby -e '
     end
 ' "$WORKFLOW"; then
     fail 'Workflow trigger or permissions shape is broader than the release policy permits.'
+fi
+
+if ! ruby -e '
+    require "yaml"
+
+    workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+    jobs = workflow.fetch("jobs")
+    abort unless jobs.keys.sort == ["publish-appcast", "release"]
+
+    release = jobs.fetch("release")
+    publish = jobs.fetch("publish-appcast")
+    abort if release.fetch("env", {}).key?("APPCAST_REPO_TOKEN")
+    abort if publish.fetch("env", {}).key?("APPCAST_REPO_TOKEN")
+    abort unless publish.fetch("needs") == "release"
+    abort unless publish.fetch("runs-on") == "macos-14"
+    abort unless publish.fetch("environment") == "appcast-publish"
+
+    outputs = release.fetch("outputs")
+    abort unless outputs == {
+      "archive_url" => "${{ steps.appcast_metadata.outputs.archive_url }}",
+      "archive_sha256" => "${{ steps.appcast_metadata.outputs.archive_sha256 }}",
+      "archive_size" => "${{ steps.appcast_metadata.outputs.archive_size }}"
+    }
+
+    release_steps = release.fetch("steps")
+    publish_steps = publish.fetch("steps")
+    metadata = release_steps.find { |step| step["id"] == "appcast_metadata" }
+    abort unless metadata && metadata.fetch("run").include?("$GITHUB_OUTPUT")
+    %w[archive_url archive_sha256 archive_size].each do |output|
+      abort unless metadata.fetch("run").include?("#{output}=")
+    end
+
+    uploads = release_steps.select { |step| step.fetch("uses", "").start_with?("actions/upload-artifact@") }
+    abort unless uploads.length == 1
+    upload = uploads.first
+    abort unless upload["uses"] == "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+    abort unless upload && upload.fetch("with").fetch("name") == "appcast-candidate"
+    abort unless upload.fetch("with").fetch("path") == "release/appcast-candidate.xml"
+    abort unless upload.fetch("with").fetch("if-no-files-found") == "error"
+    abort unless upload.fetch("with").fetch("retention-days").is_a?(Integer) && upload.fetch("with").fetch("retention-days") <= 7
+
+    download = publish_steps.find { |step| step["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" }
+    abort unless download && download.fetch("with").fetch("name") == "appcast-candidate"
+    abort unless download.fetch("with").fetch("path") == "release"
+
+    checkout = publish_steps.find { |step| step["uses"] == "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683" }
+    abort unless checkout && checkout.fetch("with") == {
+      "ref" => "${{ github.ref }}",
+      "fetch-depth" => 1,
+      "persist-credentials" => false
+    }
+
+    release_steps.each do |step|
+      abort if step.fetch("run", "").include?("scripts/publish-appcast.sh")
+      abort if step.fetch("env", {}).key?("APPCAST_REPO_TOKEN")
+    end
+    publisher_index = publish_steps.index { |step| step.fetch("run", "").include?("scripts/publish-appcast.sh") }
+    verifier_index = publish_steps.index { |step| step.fetch("run", "").include?("scripts/verify-release-zip.sh") }
+    abort unless publisher_index && verifier_index && verifier_index < publisher_index
+    verifier = publish_steps.fetch(verifier_index)
+    abort unless verifier.fetch("name") == "Verify released ZIP anonymously"
+    abort if verifier.key?("env") || verifier.fetch("run").include?("scripts/publish-appcast.sh")
+    verifier_run = verifier.fetch("run")
+    expected_verifier_lines = [
+      "set -euo pipefail",
+      "bash scripts/verify-release-zip.sh \\",
+      "\"${{ needs.release.outputs.archive_url }}\" \\",
+      "\"${{ needs.release.outputs.archive_size }}\" \\",
+      "\"${{ needs.release.outputs.archive_sha256 }}\""
+    ]
+    abort unless verifier_run.lines.map(&:strip).reject(&:empty?) == expected_verifier_lines
+    abort if verifier_run.include?("set +x") || verifier_run.include?("APPCAST_REPO_TOKEN")
+    publisher = publish_steps.fetch(publisher_index)
+    abort unless publisher.fetch("name") == "Publish verified appcast"
+    abort unless publisher.fetch("env") == { "APPCAST_REPO_TOKEN" => "${{ secrets.APPCAST_REPO_TOKEN }}" }
+    publisher_run = publisher.fetch("run")
+    expected_publisher_lines = [
+      "set -euo pipefail",
+      "set +x",
+      "bash scripts/publish-appcast.sh \\",
+      "--candidate release/appcast-candidate.xml \\",
+      "--archive-url \"${{ needs.release.outputs.archive_url }}\" \\",
+      "--archive-sha256 \"${{ needs.release.outputs.archive_sha256 }}\" \\",
+      "--release-probe scripts/verify-release-zip.sh \\",
+      "--target-repo https://github.com/SKALIFE/attendance-appcast.git \\",
+      "--branch main \\",
+      "--appcast-path appcast.xml \\",
+      "--raw-appcast-url https://raw.githubusercontent.com/SKALIFE/attendance-appcast/main/appcast.xml",
+      "unset APPCAST_REPO_TOKEN"
+    ]
+    abort unless publisher_run.lines.map(&:strip).reject(&:empty?) == expected_publisher_lines
+    abort if publisher_run.include?("bash scripts/verify-release-zip.sh")
+    publish_steps.each_with_index do |step, index|
+      abort if index != publisher_index && step.fetch("env", {}).key?("APPCAST_REPO_TOKEN")
+    end
+
+    notarized_app = release_steps.find { |step| step.fetch("name", "") == "Notarize and staple app" }
+    abort unless notarized_app && notarized_app.fetch("env").fetch("APPLE_TEAM_ID") == "${{ secrets.APPLE_TEAM_ID }}"
+    abort unless notarized_app.fetch("run").include?("codesign -d --verbose=4 \"$APP_PATH\" 2>&1")
+    abort unless notarized_app.fetch("run").include?("grep -Fxq -- \"TeamIdentifier=$APPLE_TEAM_ID\" <<<\"$APP_SIGNATURE_DETAILS\"")
+ ' "$WORKFLOW"; then
+    fail 'Release and appcast publication boundary does not satisfy the protected handoff policy.'
 fi
 
 grep -Fq 'pull_request_target:' "$PARSE_ONLY_FIXTURE" || fail 'Parse-only fixture no longer demonstrates an unsafe trigger.'
@@ -86,12 +192,14 @@ forbid_text 'pull_request_target' 'pull_request_target trigger'
 forbid_text 'workflow_dispatch' 'manual release trigger'
 
 require_text 'permissions:' 'least-privilege token permissions'
+require_text 'contents: read' 'read-only default contents permission'
 require_text 'contents: write' 'contents: write release permission'
-if [ "$(grep -Fc 'permissions:' "$WORKFLOW")" -ne 1 ]; then
-    fail 'Workflow must not add job-level permissions.'
+if [ "$(grep -Fc 'permissions:' "$WORKFLOW")" -ne 2 ]; then
+    fail 'Workflow must declare default and release-job permissions only.'
 fi
-if [ "$(grep -Ec '^[[:space:]]+[[:alnum:]_-]+:[[:space:]]*(read|write|none)$' "$WORKFLOW")" -ne 1 ]; then
-    fail 'Workflow must declare contents: write as its only permission.'
+if [ "$(grep -Ec '^[[:space:]]+contents:[[:space:]]+read$' "$WORKFLOW")" -ne 1 ] || \
+    [ "$(grep -Ec '^[[:space:]]+contents:[[:space:]]+write$' "$WORKFLOW")" -ne 1 ]; then
+    fail 'Workflow must default to contents: read and grant contents: write only to the release job.'
 fi
 
 for secret in \
@@ -139,11 +247,13 @@ require_text 'security import' 'Developer ID P12 import'
 require_text 'security delete-keychain' 'temporary signing keychain cleanup'
 require_text 'trap cleanup EXIT' 'cleanup on unsuccessful stages'
 
-if grep -E '^[[:space:]]+uses:' "$WORKFLOW" | grep -Ev '@[0-9a-f]{40}$' >"$TEMP_DIR/mutable-actions"; then
+if grep -E '^[[:space:]]+uses:' "$WORKFLOW" | grep -Ev '@[0-9a-f]{40}([[:space:]]+#.*)?$' >"$TEMP_DIR/mutable-actions"; then
     cat "$TEMP_DIR/mutable-actions" >&2
     fail 'Every action revision must be pinned to a full immutable commit SHA.'
 fi
 require_text 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' 'pinned checkout action'
+require_text 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' 'pinned appcast candidate upload action'
+require_text 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093' 'pinned appcast candidate download action'
 require_text 'fetch-depth: 0' 'full history for ancestry validation'
 require_text 'persist-credentials: false' 'checkout credential persistence disabled'
 require_text 'DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer' 'explicit Xcode selection'
@@ -173,6 +283,8 @@ require_text 'test -x "$SPARKLE_TOOLS_ROOT/bin/sign_update"' 'resolved Sparkle 2
 require_text 'bash scripts/package-release.sh' 'local package helper invocation'
 require_text 'bash scripts/notarize.sh' 'local notarization helper invocation'
 require_text 'bash scripts/notarize.sh --app "$APP_PATH"' 'app notarization before final archive creation'
+require_text 'codesign -d --verbose=4 "$APP_PATH" 2>&1' 'final app signature detail inspection after notarization'
+require_text 'grep -Fxq -- "TeamIdentifier=$APPLE_TEAM_ID" <<<"$APP_SIGNATURE_DETAILS"' 'final app TeamIdentifier verification after notarization'
 require_text 'rm -f "$ZIP_PATH" "$DMG_PATH"' 'removal of pre-staple package artifacts'
 require_text 'Rebuild ZIP from stapled app' 'ZIP recreation stage'
 require_text 'Create and notarize DMG from stapled app' 'DMG finalization stage'
@@ -221,7 +333,8 @@ require_text 'RELEASE_NOTES_PATH="docs/releases/${VERSION}.md"' 'release notes p
 require_text '--notes-file "$RELEASE_NOTES_PATH"' 'versioned release notes file'
 require_text 'SOURCE_APPCAST_SHA256' 'source appcast integrity snapshot'
 require_text 'test "$SOURCE_APPCAST_SHA256" = "$(shasum -a 256 tests/fixtures/current-appcast.xml' 'source appcast integrity check before release'
-require_text 'APPCAST_REPO_TOKEN: ${{ secrets.APPCAST_REPO_TOKEN }}' 'cross-repository appcast publication credential mapping'
+require_text 'environment: appcast-publish' 'protected appcast publication environment'
+require_text 'bash scripts/verify-release-zip.sh' 'anonymous production release ZIP verification before appcast publication'
 require_text 'bash scripts/publish-appcast.sh' 'guarded cross-repository appcast publisher'
 require_text '--release-probe scripts/verify-release-zip.sh' 'production release ZIP verification before appcast mutation'
 require_text '--target-repo https://github.com/SKALIFE/attendance-appcast.git' 'approved appcast repository target'
@@ -251,8 +364,8 @@ done
 grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
 grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
 grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
-[ -f "$RELEASE_NOTES" ] || fail 'v0.1.8 Korean release notes are missing.'
-grep -Fq '# SKALA Attendance 0.1.8' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.8.'
+[ -f "$RELEASE_NOTES" ] || fail 'v0.1.9 Korean release notes are missing.'
+grep -Fq '# SKALA Attendance 0.1.9' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.9.'
 grep -Fq '업데이터와 배포 안정성을 개선했습니다.' "$RELEASE_NOTES" || fail 'Release notes must describe updater and distribution reliability improvements.'
 grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
@@ -310,11 +423,13 @@ appcast_line=$(stage_line 'bash tests/appcast_item_test.sh')
 candidate_line=$(stage_line 'bash scripts/generate-appcast-item.sh')
 source_guard_line=$(stage_line 'Verify source appcast is unchanged')
 release_line=$(stage_line 'gh release create "$TAG"')
+candidate_upload_line=$(stage_line 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02')
+verifier_line=$(stage_line 'bash scripts/verify-release-zip.sh')
 publisher_line=$(stage_line 'bash scripts/publish-appcast.sh')
-for line in "$metadata_line" "$install_xcodegen_line" "$generate_project_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$dmg_create_line" "$dmg_sign_line" "$dmg_verify_line" "$dmg_authority_line" "$dmg_team_line" "$dmg_timestamp_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$publisher_line"; do
+for line in "$metadata_line" "$install_xcodegen_line" "$generate_project_line" "$keychain_line" "$release_build_line" "$unit_test_line" "$package_line" "$app_notarize_line" "$zip_rebuild_line" "$final_dmg_line" "$dmg_create_line" "$dmg_sign_line" "$dmg_verify_line" "$dmg_authority_line" "$dmg_team_line" "$dmg_timestamp_line" "$notarize_line" "$checksum_line" "$appcast_line" "$candidate_line" "$source_guard_line" "$release_line" "$candidate_upload_line" "$verifier_line" "$publisher_line"; do
     [[ "$line" =~ ^[0-9]+$ ]] || fail 'Expected release stage is missing from the workflow.'
 done
-if ! (( metadata_line < install_xcodegen_line && install_xcodegen_line < generate_project_line && generate_project_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < dmg_create_line && dmg_create_line < dmg_sign_line && dmg_sign_line < dmg_verify_line && dmg_verify_line < dmg_authority_line && dmg_authority_line < dmg_team_line && dmg_team_line < dmg_timestamp_line && dmg_timestamp_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < publisher_line )); then
+if ! (( metadata_line < install_xcodegen_line && install_xcodegen_line < generate_project_line && generate_project_line < keychain_line && keychain_line < release_build_line && release_build_line < unit_test_line && unit_test_line < package_line && package_line < app_notarize_line && app_notarize_line < zip_rebuild_line && zip_rebuild_line < final_dmg_line && final_dmg_line < dmg_create_line && dmg_create_line < dmg_sign_line && dmg_sign_line < dmg_verify_line && dmg_verify_line < dmg_authority_line && dmg_authority_line < dmg_team_line && dmg_team_line < dmg_timestamp_line && dmg_timestamp_line < notarize_line && notarize_line < checksum_line && checksum_line < appcast_line && appcast_line < candidate_line && candidate_line < source_guard_line && source_guard_line < release_line && release_line < candidate_upload_line && candidate_upload_line < verifier_line && verifier_line < publisher_line )); then
     fail 'Pinned XcodeGen installation and GitHub Release creation must follow the required release stage order.'
 fi
 
