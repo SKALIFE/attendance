@@ -15,8 +15,8 @@ settings:
     SWIFT_VERSION: "6.0"
     HARDENED_RUNTIME: YES
     COMBINE_HIDPI_IMAGES: YES
-    MARKETING_VERSION: "0.1.8"
-    CURRENT_PROJECT_VERSION: "9"
+    MARKETING_VERSION: "0.1.9"
+    CURRENT_PROJECT_VERSION: "10"
 schemes:
   SKALAAttendance:
     build:
@@ -51,7 +51,7 @@ targets:
             CFBundleURLSchemes:
               - skala
         SUFeedURL: https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml
-        SUPublicEDKey: PEHK0SeSaiSffuZaP8HxyTJX29sR8lNpM76ehfa8GKQ=
+        SUPublicEDKey: Wd3jeI01lpAYggUMHynFMN2FmRbwldZUGyao2hS4lik=
         UMAMI_BASE_URL: https://gateway.umami.is
         UMAMI_WEBSITE_ID: 2cb15230-9bd7-4488-bad8-e806d5f96619
         UMAMI_HOSTNAME: attendance-app.skalife.kr

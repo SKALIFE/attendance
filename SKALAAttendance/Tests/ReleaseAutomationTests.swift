@@ -15,7 +15,9 @@ final class ReleaseMetadataTests: XCTestCase {
             "https://raw.githubusercontent.com/skalife/attendance-appcast/main/appcast.xml"
         )
 
-        let publicKey = try XCTUnwrap(metadata["SUPublicEDKey"] as? String)
-        XCTAssertEqual(Data(base64Encoded: publicKey)?.count, 32)
+        XCTAssertEqual(
+            metadata["SUPublicEDKey"] as? String,
+            "Wd3jeI01lpAYggUMHynFMN2FmRbwldZUGyao2hS4lik="
+        )
     }
 }
