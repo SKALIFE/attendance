@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
 PROJECT="$ROOT/project.yml"
-RELEASE_NOTES="$ROOT/docs/releases/0.1.10.md"
+RELEASE_NOTES="$ROOT/docs/releases/0.1.11.md"
 PARSE_ONLY_FIXTURE="$ROOT/tests/fixtures/release-workflow-parse-only.yml"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -364,8 +364,8 @@ done
 grep -Fq 'SKALAAttendanceTests:' "$PROJECT" || fail 'project.yml must generate the SKALAAttendanceTests target.'
 grep -Fq 'type: bundle.unit-test' "$PROJECT" || fail 'project.yml must define a unit-test bundle target.'
 grep -Fq -- '- target: SKALAAttendance' "$PROJECT" || fail 'project.yml must declare the app dependency required by the release metadata tests.'
-[ -f "$RELEASE_NOTES" ] || fail 'v0.1.10 Korean release notes are missing.'
-grep -Fq '# SKALA Attendance 0.1.10' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.10.'
+[ -f "$RELEASE_NOTES" ] || fail 'v0.1.11 Korean release notes are missing.'
+grep -Fq '# SKALA Attendance 0.1.11' "$RELEASE_NOTES" || fail 'Release notes must identify v0.1.11.'
 grep -Fq '익명 사용 통계' "$RELEASE_NOTES" || fail 'Release notes must describe the anonymous usage analytics setting.'
 grep -Fq '출결 또는 로그인 자동화 동작에는 변경이 없습니다.' "$RELEASE_NOTES" || fail 'Release notes must preserve the attendance and login automation boundary.'
 bash "$ROOT/tests/ensure_release_absent_test.sh"
@@ -436,10 +436,10 @@ fi
 if ! ruby -e '
     contents = File.read(ARGV.fetch(0))
     signed_build = /xcodebuild build \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\''/.match?(contents)
-    unsigned_test = /xcodebuild test \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath build \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\'' \\\n+\s+CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO\s*$/.match?(contents)
-     abort unless signed_build && contents.include?(%q{-derivedDataPath "$RUNNER_TEMP/test-derived-data"}) && contents.include?(%q{CODE_SIGNING_ALLOWED=NO}) && contents.include?(%q{CODE_SIGNING_REQUIRED=NO})
+    unsigned_test = /xcodebuild test \\\n+\s+-project SKALAAttendance\.xcodeproj \\\n+\s+-scheme SKALAAttendance \\\n+\s+-configuration Release \\\n+\s+-derivedDataPath "\$RUNNER_TEMP\/test-derived-data" \\\n+\s+-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages" \\\n+\s+-destination '\''platform=macOS,arch=arm64'\'' \\\n+\s+ENABLE_TESTABILITY=YES \\\n+\s+CODE_SIGNING_ALLOWED=NO \\\n+\s+CODE_SIGNING_REQUIRED=NO\s*$/.match?(contents)
+    abort unless signed_build && unsigned_test
 ' "$WORKFLOW"; then
-    fail 'Signed app build must remain unchanged and XCTest must end with both unsigned build settings.'
+    fail 'Signed app build must remain unchanged and Release XCTest must enable testability with unsigned build settings.'
 fi
 
 if grep -F -- 'xcodebuild test' "$WORKFLOW" | grep -F -- '-derivedDataPath build' >/dev/null; then

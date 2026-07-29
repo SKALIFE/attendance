@@ -72,30 +72,30 @@ expect_failure() {
 
 VALID_OUTPUT="$TEMP_DIR/valid.out"
 expect_success "$VALID_OUTPUT" bash "$VALIDATOR" \
-    --tag v0.1.10 \
-    --project "$FIXTURES/release-0.1.10-build-11.yml" \
+    --tag v0.1.11 \
+    --project "$FIXTURES/release-0.1.11-build-12.yml" \
     --appcast "$FIXTURES/current-appcast.xml"
-assert_contains "$VALID_OUTPUT" 'Release metadata valid: tag v0.1.10, marketing version 0.1.10, build 11, appcast build 10.'
+assert_contains "$VALID_OUTPUT" 'Release metadata valid: tag v0.1.11, marketing version 0.1.11, build 12, appcast build 10.'
 
 PROJECT_OUTPUT="$TEMP_DIR/project.out"
 expect_success "$PROJECT_OUTPUT" bash "$VALIDATOR" \
-    --tag v0.1.10 \
+    --tag v0.1.11 \
     --project "$ROOT/project.yml" \
     --appcast "$FIXTURES/current-appcast.xml"
-assert_contains "$PROJECT_OUTPUT" 'Release metadata valid: tag v0.1.10, marketing version 0.1.10, build 11, appcast build 10.'
+assert_contains "$PROJECT_OUTPUT" 'Release metadata valid: tag v0.1.11, marketing version 0.1.11, build 12, appcast build 10.'
 
 MISMATCH_OUTPUT="$TEMP_DIR/mismatched-tag.out"
 expect_failure "$MISMATCH_OUTPUT" bash "$VALIDATOR" \
-    --tag v0.1.11 \
-    --project "$FIXTURES/release-0.1.10-build-11.yml" \
+    --tag v0.1.12 \
+    --project "$FIXTURES/release-0.1.11-build-12.yml" \
     --appcast "$FIXTURES/current-appcast.xml"
-assert_contains "$MISMATCH_OUTPUT" 'Tag v0.1.11 does not match marketing version 0.1.10.'
+assert_contains "$MISMATCH_OUTPUT" 'Tag v0.1.12 does not match marketing version 0.1.11.'
 assert_not_contains "$MISMATCH_OUTPUT" 'Release metadata valid:'
 
 STALE_OUTPUT="$TEMP_DIR/stale-build.out"
 expect_failure "$STALE_OUTPUT" bash "$VALIDATOR" \
-    --tag v0.1.10 \
-    --project "$FIXTURES/release-0.1.10-build-10.yml" \
+    --tag v0.1.11 \
+    --project "$FIXTURES/release-0.1.11-build-10.yml" \
     --appcast "$FIXTURES/current-appcast.xml"
 assert_contains "$STALE_OUTPUT" 'Build 10 must be greater than current appcast build 10.'
 assert_not_contains "$STALE_OUTPUT" 'Release metadata valid:'

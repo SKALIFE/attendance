@@ -114,6 +114,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/test-derived-data" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -destination 'platform=macOS,arch=arm64' \
+            ENABLE_TESTABILITY=YES \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
           APP_PATH='build/Build/Products/Release/SKALA Attendance.app'

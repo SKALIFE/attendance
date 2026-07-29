@@ -144,7 +144,7 @@ EOF
 run_generator() {
     env LEAK_MARKER='must-not-reach-tools' OPENSSL_BIN="$OPENSSL" SPARKLE_EDDSA_PRIVATE_KEY="$TEST_PRIVATE_KEY" TOOL_LOG="$TOOL_LOG" \
         bash "$GENERATOR" \
-        --tag v0.1.10 --build 11 --archive "$ARCHIVE" --archive-sha256 "$ARCHIVE_DIGEST" \
+        --tag v0.1.11 --build 12 --archive "$ARCHIVE" --archive-sha256 "$ARCHIVE_DIGEST" \
         --archive-url "$ARCHIVE_URL" --appcast "$APPCAST" --project "$TEST_PROJECT" \
         --sparkle-tools-root "$TOOLS_ROOT" --release-probe "$PROBE" "$@"
 }
@@ -161,11 +161,11 @@ TEST_PROJECT="$TEMP_DIR/project.yml"
 make_test_project
 APPCAST="$TEMP_DIR/appcast.xml"
 cp "$FIXTURES/current-appcast.xml" "$APPCAST"
-ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.10-arm64.zip"
+ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.11-arm64.zip"
 make_archive "$ARCHIVE"
 ARCHIVE_SIZE=$(stat -f '%z' "$ARCHIVE")
 ARCHIVE_DIGEST=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
-ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.10/SKALA-Attendance-0.1.10-arm64.zip'
+ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.11/SKALA-Attendance-0.1.11-arm64.zip'
 TOOLS_ROOT="$TEMP_DIR/sparkle-tools"
 TOOLS_BIN="$TOOLS_ROOT/bin"
 mkdir -p "$TOOLS_BIN"
@@ -200,7 +200,7 @@ assert_contains "$MISMATCHED_KEY_OUTPUT" 'Signing key does not match project SUP
 MISSING_KEY_OUTPUT="$TEMP_DIR/missing-key.out"
 expect_failure "$MISSING_KEY_OUTPUT" env -u SPARKLE_EDDSA_PRIVATE_KEY \
     bash "$GENERATOR" \
-    --tag v0.1.10 --build 11 --archive "$ARCHIVE" --archive-sha256 "$ARCHIVE_DIGEST" \
+    --tag v0.1.11 --build 12 --archive "$ARCHIVE" --archive-sha256 "$ARCHIVE_DIGEST" \
     --archive-url "$ARCHIVE_URL" --appcast "$APPCAST" --project "$TEST_PROJECT" \
     --sparkle-tools-root "$TOOLS_ROOT" --release-probe "$PROBE"
 assert_contains "$MISSING_KEY_OUTPUT" 'SPARKLE_EDDSA_PRIVATE_KEY is required for Sparkle signing.'
@@ -216,8 +216,8 @@ assert_unchanged "$BASELINE_BEFORE" "$APPCAST"
 
 RAW_MAIN_OUTPUT="$TEMP_DIR/raw-main.out"
 expect_failure "$RAW_MAIN_OUTPUT" run_generator \
-    --archive-url 'https://raw.githubusercontent.com/SKALIFE/attendance/main/SKALA-Attendance-0.1.10-arm64.zip'
-assert_contains "$RAW_MAIN_OUTPUT" 'Archive URL must be the immutable GitHub Release asset URL for v0.1.10.'
+    --archive-url 'https://raw.githubusercontent.com/SKALIFE/attendance/main/SKALA-Attendance-0.1.11-arm64.zip'
+assert_contains "$RAW_MAIN_OUTPUT" 'Archive URL must be the immutable GitHub Release asset URL for v0.1.11.'
 assert_unchanged "$BASELINE_BEFORE" "$APPCAST"
 
 MALFORMED_APPCAST="$TEMP_DIR/malformed-appcast.xml"
@@ -229,12 +229,12 @@ assert_contains "$MALFORMED_XML_OUTPUT" 'Appcast XML is not well-formed.'
 assert_unchanged "$BASELINE_BEFORE" "$APPCAST"
 
 mkdir -p "$TEMP_DIR/invalid"
-INVALID_ZIP="$TEMP_DIR/invalid/SKALA-Attendance-0.1.10-arm64.zip"
+INVALID_ZIP="$TEMP_DIR/invalid/SKALA-Attendance-0.1.11-arm64.zip"
 printf 'not a zip\n' >"$INVALID_ZIP"
 INVALID_ZIP_OUTPUT="$TEMP_DIR/invalid-zip.out"
 expect_failure "$INVALID_ZIP_OUTPUT" env SPARKLE_EDDSA_PRIVATE_KEY="$TEST_PRIVATE_KEY" \
     bash "$GENERATOR" \
-    --tag v0.1.10 --build 11 --archive "$INVALID_ZIP" --archive-sha256 "$(shasum -a 256 "$INVALID_ZIP" | awk '{print $1}')" \
+    --tag v0.1.11 --build 12 --archive "$INVALID_ZIP" --archive-sha256 "$(shasum -a 256 "$INVALID_ZIP" | awk '{print $1}')" \
     --archive-url "$ARCHIVE_URL" --appcast "$APPCAST" --project "$TEST_PROJECT" \
     --sparkle-tools-root "$TOOLS_ROOT" --release-probe "$PROBE"
 assert_contains "$INVALID_ZIP_OUTPUT" 'Archive ZIP integrity validation failed.'
