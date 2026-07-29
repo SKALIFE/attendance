@@ -141,6 +141,15 @@ final class AnalyticsEventTests: XCTestCase {
         XCTAssertFalse(data.keys.contains("error"))
     }
 
+    func testPrivacyDisclosureIncludesAllTelemetryAndExclusions() {
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("영구 저장되는 익명 설치 ID"))
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("설치·앱 실행·출결 화면 열기"))
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("웹뷰 연결 실패"))
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("업데이트 확인·다운로드·설치 상태"))
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("앱 버전과 빌드 번호, macOS 버전, arm64 아키텍처"))
+        XCTAssertTrue(analyticsPrivacyDisclosure.contains("계정 정보, 출결 내역, 실제 방문 주소, 페이지 내용, 쿠키, 토큰"))
+    }
+
     func testUpdateTelemetrySuppressesAbortAfterNoUpdate() {
         var state = UpdateTelemetryState()
 
