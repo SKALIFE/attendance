@@ -1,10 +1,30 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
     <item>
-      <title>Version 0.1.0</title>
-      <sparkle:version>1</sparkle:version>
-      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <title>Version 0.1.9</title>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
+      <enclosure url="https://github.com/SKALIFE/attendance/releases/download/v0.1.9/SKALA-Attendance-0.1.9-arm64.zip" length="1064373" type="application/octet-stream" sparkle:edSignature="S9qA8Yv+X36wTKDeieAdtCDrtE3p16/QwtBY1pSj2pW0IdbmluJiBJclZbueqrpf6oHNUAC4OESHv2oEkDI4Bw==" sparkle:version="10" sparkle:shortVersionString="0.1.9" sparkle:minimumSystemVersion="14.0" sparkle:os="macos" sparkle:arch="arm64" />
     </item>
-  </channel>
+        <title>SKALA Attendance</title>
+        <item>
+            <title>0.1.8</title>
+            <pubDate>Tue, 28 Jul 2026 00:03:06 +0000</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/SKALIFE/attendance/releases/download/v0.1.8/SKALA-Attendance-0.1.8-arm64.zip" length="1064359" type="application/octet-stream" sparkle:edSignature="ZvdDonNcBi2jiCohDutY0H4jipTTrdbE2Im0MsMVY1U54Frkkc3tu7w8AwtMC+yApQbBbKUDqfJwRYTGXOdxCg=="/>
+        </item>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Fri, 24 Jul 2026 17:41:35 +0900</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://raw.githubusercontent.com/skalife/attendance-appcast/main/SKALA-Attendance-0.1.0-arm64.zip" length="1104955" type="application/octet-stream" sparkle:edSignature="fV+5RTyNGeZ9qJPpULuSFwhDUdQanjqYikYU/hUDOQHFBBwjijm8fMjtFtjLS56cb+H0T9fIuNVbwlSN3fKnDQ=="/>
+        </item>
+    </channel>
 </rss>
