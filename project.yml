@@ -25,6 +25,7 @@ schemes:
     test:
       targets:
         - SKALAAttendanceTests
+        - SKALAAttendanceAnalyticsTests
 targets:
   SKALAAttendance:
     type: application
@@ -79,6 +80,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance.tests
+        GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: ""
         BUNDLE_LOADER: ""
       configs:
@@ -88,3 +90,16 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           CODE_SIGN_STYLE: Manual
+  SKALAAttendanceAnalyticsTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SKALAAttendanceTests
+    dependencies:
+      - target: SKALAAttendance
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.skalife.attendance.analytics-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SKALA Attendance.app/Contents/MacOS/SKALA Attendance"
+        BUNDLE_LOADER: "$(TEST_HOST)"
