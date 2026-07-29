@@ -109,7 +109,7 @@ MISMATCHED_PUBLIC_KEY=$(openssl rand -base64 32)
 [ "$MISMATCHED_PUBLIC_KEY" != "$MATCHING_PUBLIC_KEY" ] || fail 'Unable to construct a mismatched Sparkle public key fixture.'
 write_project_with_public_key "$MISMATCHED_PROJECT" "$MISMATCHED_PUBLIC_KEY"
 
-GENERATOR_ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.zip"
+GENERATOR_ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.10-arm64.zip"
 GENERATOR_SOURCE="$TEMP_DIR/generator-source"
 mkdir -p "$GENERATOR_SOURCE/SKALA Attendance.app/Contents/MacOS"
 printf 'Sparkle signature compatibility fixture\n' >"$GENERATOR_SOURCE/SKALA Attendance.app/Contents/MacOS/SKALAAttendance"
@@ -129,8 +129,8 @@ EOF
 chmod +x "$GENERATOR_PROBE"
 GENERATOR_OUTPUT="$TEMP_DIR/appcast-item.xml"
 env SPARKLE_EDDSA_PRIVATE_KEY="$PRIVATE_KEY" bash "$ROOT/scripts/generate-appcast-item.sh" \
-    --tag v0.1.1 --build 2 --archive "$GENERATOR_ARCHIVE" --archive-sha256 "$GENERATOR_DIGEST" \
-    --archive-url 'https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip' \
+    --tag v0.1.10 --build 11 --archive "$GENERATOR_ARCHIVE" --archive-sha256 "$GENERATOR_DIGEST" \
+    --archive-url 'https://github.com/SKALIFE/attendance/releases/download/v0.1.10/SKALA-Attendance-0.1.10-arm64.zip' \
     --appcast "$GENERATOR_APPCAST" --project "$MATCHING_PROJECT" --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$GENERATOR_PROBE" >"$GENERATOR_OUTPUT"
 GENERATOR_SIGNATURE=$(awk -F 'sparkle:edSignature="' 'NF > 1 { split($2, value, "\""); print value[1]; exit }' "$GENERATOR_OUTPUT")
@@ -138,8 +138,8 @@ verify_signature_with_sign_update "$GENERATOR_ARCHIVE" "$GENERATOR_SIGNATURE" "$
 
 MISMATCH_OUTPUT="$TEMP_DIR/mismatched-project.out"
 if env SPARKLE_EDDSA_PRIVATE_KEY="$PRIVATE_KEY" bash "$ROOT/scripts/generate-appcast-item.sh" \
-    --tag v0.1.1 --build 2 --archive "$GENERATOR_ARCHIVE" --archive-sha256 "$GENERATOR_DIGEST" \
-    --archive-url 'https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip' \
+    --tag v0.1.10 --build 11 --archive "$GENERATOR_ARCHIVE" --archive-sha256 "$GENERATOR_DIGEST" \
+    --archive-url 'https://github.com/SKALIFE/attendance/releases/download/v0.1.10/SKALA-Attendance-0.1.10-arm64.zip' \
     --appcast "$GENERATOR_APPCAST" --project "$MISMATCHED_PROJECT" --sparkle-tools-root "$TOOLS_ROOT" \
     --release-probe "$GENERATOR_PROBE" >"$MISMATCH_OUTPUT" 2>&1; then
     fail 'Sparkle appcast generation must reject a signing key that does not match project SUPublicEDKey.'

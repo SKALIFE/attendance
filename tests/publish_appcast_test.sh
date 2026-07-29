@@ -128,7 +128,7 @@ run_publisher() {
 }
 
 EXPECTED_DIGEST='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-EXPECTED_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip'
+EXPECTED_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.10/SKALA-Attendance-0.1.10-arm64.zip'
 mkdir -p "$TEST_TMPDIR"
 make_target
 make_probe
@@ -156,12 +156,12 @@ expect_failure "$TEMP_DIR/malformed.out" run_publisher "$MALFORMED"
 assert_unchanged "$INITIAL_APPCAST" <(remote_file appcast.xml)
 
 BAD_URL_CANDIDATE="$TEMP_DIR/bad-url.xml"
-make_candidate "$BAD_URL_CANDIDATE" 0.1.1 2 'https://example.invalid/SKALA-Attendance-0.1.1-arm64.zip'
+make_candidate "$BAD_URL_CANDIDATE" 0.1.10 11 'https://example.invalid/SKALA-Attendance-0.1.10-arm64.zip'
 expect_failure "$TEMP_DIR/bad-url.out" run_publisher "$BAD_URL_CANDIDATE"
 assert_unchanged "$INITIAL_APPCAST" <(remote_file appcast.xml)
 
 VALID_CANDIDATE="$TEMP_DIR/candidate.xml"
-make_candidate "$VALID_CANDIDATE" 0.1.1 2 "$EXPECTED_URL"
+make_candidate "$VALID_CANDIDATE" 0.1.10 11 "$EXPECTED_URL"
 DUPLICATE_CANDIDATE="$TEMP_DIR/duplicate-candidate.xml"
 cp "$VALID_CANDIDATE" "$DUPLICATE_CANDIDATE"
 awk '
@@ -203,7 +203,7 @@ run_publisher "$VALID_CANDIDATE" >"$SUCCESS_OUTPUT"
 assert_not_contains "$SUCCESS_OUTPUT" 'offline-test-token-must-not-leak'
 UPDATED_APPCAST="$TEMP_DIR/updated-appcast.xml"
 remote_file appcast.xml >"$UPDATED_APPCAST"
-assert_contains "$UPDATED_APPCAST" '<sparkle:version>2</sparkle:version>'
+assert_contains "$UPDATED_APPCAST" '<sparkle:version>11</sparkle:version>'
 assert_contains "$UPDATED_APPCAST" "url=\"$EXPECTED_URL\""
 assert_contains "$UPDATED_APPCAST" '<sparkle:version>1</sparkle:version>'
 assert_not_contains "$UPDATED_APPCAST" 'Release ZIP download verified.'
@@ -213,9 +213,9 @@ assert_unchanged "$INITIAL_README" <(remote_file README.md)
 expect_failure "$TEMP_DIR/repeat.out" run_publisher "$VALID_CANDIDATE"
 assert_unchanged "$UPDATED_APPCAST" <(remote_file appcast.xml)
 
-NEXT_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.2/SKALA-Attendance-0.1.2-arm64.zip'
+NEXT_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.11/SKALA-Attendance-0.1.11-arm64.zip'
 NEXT_CANDIDATE="$TEMP_DIR/next-candidate.xml"
-make_candidate "$NEXT_CANDIDATE" 0.1.2 3 "$NEXT_URL"
+make_candidate "$NEXT_CANDIDATE" 0.1.11 12 "$NEXT_URL"
 EXPECTED_URL="$NEXT_URL"
 make_probe
 cat >"$TARGET/hooks/pre-receive" <<'EOF'
@@ -227,16 +227,16 @@ PUSH_FAIL_OUTPUT="$TEMP_DIR/push-fail.out"
 expect_failure "$PUSH_FAIL_OUTPUT" run_publisher "$NEXT_CANDIDATE"
 assert_unchanged "$UPDATED_APPCAST" <(remote_file appcast.xml)
 
-RAW_FAILURE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.3/SKALA-Attendance-0.1.3-arm64.zip'
+RAW_FAILURE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.12/SKALA-Attendance-0.1.12-arm64.zip'
 RAW_FAILURE_CANDIDATE="$TEMP_DIR/raw-failure-candidate.xml"
-make_candidate "$RAW_FAILURE_CANDIDATE" 0.1.3 4 "$RAW_FAILURE_URL"
+make_candidate "$RAW_FAILURE_CANDIDATE" 0.1.12 13 "$RAW_FAILURE_URL"
 EXPECTED_URL="$RAW_FAILURE_URL"
 make_probe
 rm -f "$TARGET/hooks/pre-receive"
 RAW_FAILURE_OUTPUT="$TEMP_DIR/raw-failure.out"
 RAW_MODE=stale RAW_STALE="$INITIAL_APPCAST" expect_failure "$RAW_FAILURE_OUTPUT" run_publisher "$RAW_FAILURE_CANDIDATE"
 assert_not_contains "$RAW_FAILURE_OUTPUT" 'Published appcast version'
-assert_contains <(remote_file appcast.xml) '<sparkle:version>4</sparkle:version>'
+assert_contains <(remote_file appcast.xml) '<sparkle:version>13</sparkle:version>'
 
 if compgen -G "$TEST_TMPDIR/appcast-publisher.*" >/dev/null; then
     fail 'Publisher left its temporary clone behind.'

@@ -11,6 +11,9 @@ final class AttendanceController: ObservableObject {
 
     private let analyticsConfig = AnalyticsConfiguration.fromBundle
     private let analyticsClient: AnalyticsClient
+    private lazy var navigationDelegate = WebViewNavigationDelegate { [weak self] reason in
+        self?.trackWebViewLoadFailure(reason)
+    }
     private let defaults = UserDefaults.standard
     private let logger = Logger(subsystem: "kr.skalife.attendance", category: "app")
 
@@ -21,9 +24,10 @@ final class AttendanceController: ObservableObject {
             configuration: config
         )
         view.customUserAgent = mobileUserAgent
-        view.load(URLRequest(url: attendanceURL))
         self.webView = view
         self.analyticsClient = AnalyticsClient(configuration: analyticsConfig)
+        view.navigationDelegate = navigationDelegate
+        view.load(URLRequest(url: attendanceURL))
 
         trackLifecycleEvents()
     }
@@ -38,13 +42,7 @@ final class AttendanceController: ObservableObject {
     }
 
     private func trackLifecycleEvents() {
-        let installID: String
-        if let existing = defaults.string(forKey: "anonymousInstallID") {
-            installID = existing
-        } else {
-            installID = UUID().uuidString
-            defaults.set(installID, forKey: "anonymousInstallID")
-        }
+        let installID = anonymousInstallID
 
         let enabled = analyticsEnabled
 
@@ -61,5 +59,29 @@ final class AttendanceController: ObservableObject {
         }
 
         logger.info("app launched, analytics configured: \(self.analyticsConfig.isConfigured)")
+    }
+
+    private var anonymousInstallID: String {
+        if let existing = defaults.string(forKey: "anonymousInstallID") {
+            return existing
+        }
+
+        let installID = UUID().uuidString
+        defaults.set(installID, forKey: "anonymousInstallID")
+        return installID
+    }
+
+    private func trackWebViewLoadFailure(_ reason: WebViewLoadFailureReason) {
+        let installID = anonymousInstallID
+        let enabled = analyticsEnabled
+
+        Task {
+            await analyticsClient.track(
+                .webViewLoadFailed,
+                distinctID: installID,
+                analyticsEnabled: enabled,
+                extraData: ["reason": reason.rawValue]
+            )
+        }
     }
 }

@@ -87,28 +87,28 @@ incident owners rather than publishing a manual feed edit.
 3. Run the ordinary local checks and review the complete diff, including
    untracked release notes. Stage every intended path explicitly; for a normal
    version bump, for example:
-   `git add -- project.yml docs/releases/0.1.1.md`. If the release includes
+   `git add -- project.yml docs/releases/0.1.10.md`. If the release includes
    other reviewed workflow, generated metadata, test, or documentation
    changes, add those exact paths as well rather than using `git add -A`.
    Run `git diff --cached --check`, inspect `git diff --cached`, and confirm
    `git status --short` shows no intended release file left unstaged. Then
-   create the commit with `git commit -m 'chore: release 0.1.1'`.
+   create the commit with `git commit -m 'build(release): prepare v0.1.10 build 11'`.
 4. Push that reviewed commit to `main`: `git push origin main`. The tag must
    point at a commit reachable from `main`.
 5. Create the annotated tag from that exact commit, for example:
-   `git tag -a v0.1.1 -m 'Release v0.1.1'`.
-6. Push only that tag: `git push origin v0.1.1`. This starts the release CI
+   `git tag -a v0.1.10 -m 'Release v0.1.10'`.
+6. Push only that tag: `git push origin v0.1.10`. This starts the release CI
    workflow. Do not retag, force-push, or reuse a released version.
 
 Before pushing the tag, run the read-only preflight with the locally prepared
 candidate inputs. A fixture-style invocation is:
 
 ```bash
-bash scripts/release/preflight.sh v0.1.1 \
-  --project tests/fixtures/release-0.1.1-build-2.yml \
+bash scripts/release/preflight.sh v0.1.10 \
+  --project tests/fixtures/release-0.1.10-build-11.yml \
   --appcast tests/fixtures/current-appcast.xml \
   --candidate /path/to/appcast-candidate.xml \
-  --archive /path/to/SKALA-Attendance-0.1.1-arm64.zip \
+  --archive /path/to/SKALA-Attendance-0.1.10-arm64.zip \
   --archive-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --sparkle-tools-root /path/to/pinned-sparkle-tools \
   --release-probe /path/to/release-probe

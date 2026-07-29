@@ -9,7 +9,8 @@ struct AnalyticsClient: Sendable {
     func track(
         _ event: AnalyticsEvent,
         distinctID: String,
-        analyticsEnabled: Bool
+        analyticsEnabled: Bool,
+        extraData: [String: String] = [:]
     ) async {
         guard analyticsEnabled,
               configuration.isConfigured,
@@ -17,6 +18,45 @@ struct AnalyticsClient: Sendable {
               let websiteID = configuration.websiteID else {
             return
         }
+
+        guard let payloadData = serializedPayload(
+            for: event,
+            distinctID: distinctID,
+            extraData: extraData,
+            websiteID: websiteID
+        ) else {
+            return
+        }
+
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/send"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 3
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("SKALA-Attendance/0.1.0 (macOS; arm64)", forHTTPHeaderField: "User-Agent")
+        request.httpBody = payloadData
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            if let http = response as? HTTPURLResponse {
+                logger.debug("analytics \(event.rawValue): HTTP \(http.statusCode)")
+            }
+        } catch {
+            logger.debug("analytics \(event.rawValue) failed: \(error.localizedDescription)")
+        }
+    }
+
+    func serializedPayload(
+        for event: AnalyticsEvent,
+        distinctID: String,
+        extraData: [String: String],
+        websiteID: String
+    ) -> Data? {
+        let data = [
+            "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0",
+            "build_number": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
+            "macos_version": ProcessInfo.processInfo.operatingSystemVersionString,
+            "architecture": "arm64"
+        ].merging(extraData) { existing, _ in existing }
 
         let payload: [String: Any] = [
             "type": "event",
@@ -27,29 +67,9 @@ struct AnalyticsClient: Sendable {
                 "name": event.rawValue,
                 "distinctId": distinctID,
                 "id": distinctID,
-                "data": [
-                    "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0",
-                    "build_number": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
-                    "macos_version": ProcessInfo.processInfo.operatingSystemVersionString,
-                    "architecture": "arm64"
-                ]
+                "data": data
             ]
         ]
-
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/send"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 3
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("SKALA-Attendance/0.1.0 (macOS; arm64)", forHTTPHeaderField: "User-Agent")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-
-        do {
-            let (_, response) = try await session.data(for: request)
-            if let http = response as? HTTPURLResponse {
-                logger.debug("analytics \(event.rawValue): HTTP \(http.statusCode)")
-            }
-        } catch {
-            logger.debug("analytics \(event.rawValue) failed: \(error.localizedDescription)")
-        }
+        return try? JSONSerialization.data(withJSONObject: payload)
     }
 }

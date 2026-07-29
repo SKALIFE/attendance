@@ -67,7 +67,7 @@ require_documentation() {
         'Do not create a second account' \
         'MARKETING_VERSION' \
         'CURRENT_PROJECT_VERSION' \
-        'git add -- project.yml docs/releases/0.1.1.md' \
+        'git add -- project.yml docs/releases/0.1.10.md' \
         'git diff --cached --check' \
         'git commit' \
         'git push origin main' \
@@ -76,7 +76,7 @@ require_documentation() {
         'checksums.txt' \
         'Rollback before feed publication' \
         'CI GUI boundary' \
-        'scripts/release/preflight.sh v0.1.1'; do
+        'scripts/release/preflight.sh v0.1.10'; do
         assert_contains "$DOCUMENTATION" "$text"
     done
 
@@ -101,8 +101,8 @@ make_candidate() {
     local destination=$1
     local signature=$2
     local duplicate=${3:-false}
-    local candidate_version=${4:-0.1.1}
-    local candidate_build=${5:-2}
+    local candidate_version=${4:-0.1.10}
+    local candidate_build=${5:-11}
 
     cat >"$destination" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -151,11 +151,11 @@ make_archive_and_verifier() {
 
     mkdir -p "$source/SKALA Attendance.app/Contents/MacOS"
     printf 'preflight archive fixture\n' >"$source/SKALA Attendance.app/Contents/MacOS/SKALAAttendance"
-    ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.1-arm64.zip"
+    ARCHIVE="$TEMP_DIR/SKALA-Attendance-0.1.10-arm64.zip"
     (cd "$source" && /usr/bin/zip -qry "$ARCHIVE" 'SKALA Attendance.app')
     ARCHIVE_SIZE=$(stat -f '%z' "$ARCHIVE")
     ARCHIVE_DIGEST=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
-    ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.1/SKALA-Attendance-0.1.1-arm64.zip'
+    ARCHIVE_URL='https://github.com/SKALIFE/attendance/releases/download/v0.1.10/SKALA-Attendance-0.1.10-arm64.zip'
 
     TEST_PRIVATE_KEY="$TEMP_DIR/disposable-ed25519-private.pem"
     TEST_PUBLIC_PEM="$TEMP_DIR/disposable-ed25519-public.pem"
@@ -164,8 +164,8 @@ make_archive_and_verifier() {
     TEST_PUBLIC_KEY=$("$OPENSSL" pkey -pubin -in "$TEST_PUBLIC_PEM" -pubout -outform DER | dd bs=1 skip=12 2>/dev/null | "$OPENSSL" base64 -A)
     TEST_PROJECT="$TEMP_DIR/project.yml"
     awk -v public_key="$TEST_PUBLIC_KEY" '
-        /^[[:space:]]*MARKETING_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"0.1.1\"") }
-        /^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"2\"") }
+        /^[[:space:]]*MARKETING_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"0.1.10\"") }
+        /^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*/ { sub(/:.*/, ": \"11\"") }
         /^[[:space:]]*SUPublicEDKey:[[:space:]]*/ { sub(/:.*/, ": " public_key) }
         { print }
     ' "$ROOT/project.yml" >"$TEST_PROJECT"
@@ -258,9 +258,9 @@ make_baseline_with_released_version() {
         /<channel>/ {
             print
             print "    <item>"
-            print "      <title>Released Version 0.1.1</title>"
-            print "      <sparkle:version>1</sparkle:version>"
-            print "      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>"
+            print "      <title>Released Version 0.1.10</title>"
+            print "      <sparkle:version>10</sparkle:version>"
+            print "      <sparkle:shortVersionString>0.1.10</sparkle:shortVersionString>"
             print "    </item>"
             next
         }
@@ -281,7 +281,7 @@ make_clean_worktree() {
 
 run_preflight() {
     local candidate=$1
-    local tag=${2:-v0.1.1}
+    local tag=${2:-v0.1.10}
     local project=${3:-$TEST_PROJECT}
     local appcast=${4:-$FIXTURES/current-appcast.xml}
 
@@ -320,7 +320,7 @@ make_probe 0
 if [ "$SYNTHETIC_SIGNING_SUPPORTED" = true ]; then
     VALID_OUTPUT="$TEMP_DIR/valid.out"
     expect_success "$VALID_OUTPUT" run_preflight "$VALID_CANDIDATE"
-    assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+    assert_contains "$VALID_OUTPUT" 'Release preflight passed: tag v0.1.10.'
 else
     printf 'Skipping synthetic Ed25519 signing: OpenSSL cannot initialize EVP_PKEY_sign.\n'
 fi
@@ -346,7 +346,7 @@ make_candidate "$PORTABLE_CANDIDATE" "$PORTABLE_SIGNATURE"
 if [ "$SYNTHETIC_SIGNING_SUPPORTED" = true ]; then
     PORTABLE_OUTPUT="$TEMP_DIR/portable.out"
     expect_success "$PORTABLE_OUTPUT" run_preflight "$PORTABLE_CANDIDATE"
-    assert_contains "$PORTABLE_OUTPUT" 'Release preflight passed: tag v0.1.1.'
+    assert_contains "$PORTABLE_OUTPUT" 'Release preflight passed: tag v0.1.10.'
 else
     printf 'Skipping portable synthetic signing: OpenSSL cannot initialize EVP_PKEY_sign.\n'
 fi
@@ -374,28 +374,28 @@ assert_contains "$ALL_A_OUTPUT" 'Sparkle signature verification failed.'
 DUPLICATE_RELEASED_BASELINE="$TEMP_DIR/duplicate-released-version.xml"
 make_baseline_with_released_version "$DUPLICATE_RELEASED_BASELINE"
 DUPLICATE_RELEASED_OUTPUT="$TEMP_DIR/duplicate-released-version.out"
-expect_failure "$DUPLICATE_RELEASED_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.1 "$TEST_PROJECT" "$DUPLICATE_RELEASED_BASELINE"
-assert_contains "$DUPLICATE_RELEASED_OUTPUT" 'Candidate version 0.1.1 already exists in baseline appcast.'
+expect_failure "$DUPLICATE_RELEASED_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.10 "$TEST_PROJECT" "$DUPLICATE_RELEASED_BASELINE"
+assert_contains "$DUPLICATE_RELEASED_OUTPUT" 'Candidate version 0.1.10 already exists in baseline appcast.'
 
 MISMATCHED_VERSION_CANDIDATE="$TEMP_DIR/mismatched-version.xml"
-make_candidate "$MISMATCHED_VERSION_CANDIDATE" "$VALID_SIGNATURE" false 0.1.2 2
+make_candidate "$MISMATCHED_VERSION_CANDIDATE" "$VALID_SIGNATURE" false 0.1.11 11
 MISMATCHED_VERSION_OUTPUT="$TEMP_DIR/mismatched-version.out"
 expect_failure "$MISMATCHED_VERSION_OUTPUT" run_preflight "$MISMATCHED_VERSION_CANDIDATE"
-assert_contains "$MISMATCHED_VERSION_OUTPUT" 'Candidate version 0.1.2 does not match release tag v0.1.1.'
+assert_contains "$MISMATCHED_VERSION_OUTPUT" 'Candidate version 0.1.11 does not match release tag v0.1.10.'
 
 MISMATCHED_BUILD_CANDIDATE="$TEMP_DIR/mismatched-build.xml"
-make_candidate "$MISMATCHED_BUILD_CANDIDATE" "$VALID_SIGNATURE" false 0.1.1 3
+make_candidate "$MISMATCHED_BUILD_CANDIDATE" "$VALID_SIGNATURE" false 0.1.10 12
 MISMATCHED_BUILD_OUTPUT="$TEMP_DIR/mismatched-build.out"
 expect_failure "$MISMATCHED_BUILD_OUTPUT" run_preflight "$MISMATCHED_BUILD_CANDIDATE"
-assert_contains "$MISMATCHED_BUILD_OUTPUT" 'Candidate build 3 does not match project build 2.'
+assert_contains "$MISMATCHED_BUILD_OUTPUT" 'Candidate build 12 does not match project build 11.'
 
 MISMATCH_OUTPUT="$TEMP_DIR/mismatch.out"
-expect_failure "$MISMATCH_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.2
-assert_contains "$MISMATCH_OUTPUT" 'Tag v0.1.2 does not match marketing version 0.1.1.'
+expect_failure "$MISMATCH_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.11
+assert_contains "$MISMATCH_OUTPUT" 'Tag v0.1.11 does not match marketing version 0.1.10.'
 
 STALE_OUTPUT="$TEMP_DIR/stale.out"
-expect_failure "$STALE_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.1 "$FIXTURES/release-0.1.1-build-1.yml"
-assert_contains "$STALE_OUTPUT" 'Build 1 must be greater than current appcast build 1.'
+expect_failure "$STALE_OUTPUT" run_preflight "$VALID_CANDIDATE" v0.1.10 "$FIXTURES/release-0.1.10-build-10.yml"
+assert_contains "$STALE_OUTPUT" 'Build 10 must be greater than current appcast build 10.'
 
 DUPLICATE_CANDIDATE="$TEMP_DIR/duplicate.xml"
 make_candidate "$DUPLICATE_CANDIDATE" "$VALID_SIGNATURE" true
@@ -425,7 +425,7 @@ DIRTY_WORKTREE="$TEMP_DIR/dirty-worktree"
 cp -R "$CLEAN_WORKTREE" "$DIRTY_WORKTREE"
 printf 'dirty\n' >"$DIRTY_WORKTREE/dirty-file"
 DIRTY_OUTPUT="$TEMP_DIR/dirty.out"
-expect_failure "$DIRTY_OUTPUT" bash "$DIRTY_WORKTREE/scripts/release/preflight.sh" v0.1.1 \
+expect_failure "$DIRTY_OUTPUT" bash "$DIRTY_WORKTREE/scripts/release/preflight.sh" v0.1.10 \
     --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE" \
@@ -437,7 +437,7 @@ assert_contains "$DIRTY_OUTPUT" 'Worktree has uncommitted changes.'
 
 INJECTION_MARKER="$TEMP_DIR/tag-injection-ran"
 TAG_INJECTION_OUTPUT="$TEMP_DIR/tag-injection.out"
-expect_failure "$TAG_INJECTION_OUTPUT" bash "$PREFLIGHT" "v0.1.1;touch $INJECTION_MARKER" \
+expect_failure "$TAG_INJECTION_OUTPUT" bash "$PREFLIGHT" "v0.1.10;touch $INJECTION_MARKER" \
     --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE" \
@@ -449,7 +449,7 @@ expect_failure "$TAG_INJECTION_OUTPUT" bash "$PREFLIGHT" "v0.1.1;touch $INJECTIO
 
 PATH_INJECTION_MARKER="$TEMP_DIR/path-injection-ran"
 PATH_INJECTION_OUTPUT="$TEMP_DIR/path-injection.out"
-expect_failure "$PATH_INJECTION_OUTPUT" bash "$PREFLIGHT" v0.1.1 \
+expect_failure "$PATH_INJECTION_OUTPUT" bash "$PREFLIGHT" v0.1.10 \
     --project "$TEST_PROJECT" \
     --appcast "$FIXTURES/current-appcast.xml" \
     --candidate "$VALID_CANDIDATE;touch $PATH_INJECTION_MARKER" \
