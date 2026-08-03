@@ -43,6 +43,14 @@ xcodebuild build -project SKALAAttendance.xcodeproj \
   -destination 'platform=macOS,arch=arm64'
 ```
 
+## 유지보수
+
+- [릴리스 운영 절차](docs/runbooks/release.md)
+- [다음 릴리스 변경 기록](docs/releases/unreleased.md)
+
+릴리스는 명시적인 maintainer 요청이 있을 때만 시작하며, 서명된 산출물
+검증 후 appcast 게시 전에 별도 승인을 받습니다.
+
 ## 라이선스
 
 MIT License. [LICENSE](LICENSE) 파일을 참고하세요.
