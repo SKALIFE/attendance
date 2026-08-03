@@ -33,3 +33,18 @@ SwiftUI MenuBarExtra (.window)
 - Hardened Runtime on, App Sandbox off
 - Swift 6 strict concurrency
 - LSUIElement = true (메뉴바 전용)
+
+## Release operations
+
+- A release requires an explicit maintainer instruction. A source, resource,
+  documentation, test, CI, release-note, or `main` change never authorizes a
+  release by itself.
+- Follow `docs/runbooks/release.md` for every release. Do not change release
+  metadata or create or push a release tag outside that procedure.
+- Record completed user-relevant app changes in
+  `docs/releases/unreleased.md`; editing that file is not release
+  authorization.
+- The initial release instruction authorizes work only through a verified
+  GitHub Release. After reporting the required artifact and unchanged-live-feed
+  evidence, obtain a second explicit maintainer approval before approving the
+  protected `appcast-publish` Environment.

@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PREFLIGHT_SOURCE="$ROOT/scripts/release/preflight.sh"
 PREFLIGHT="$PREFLIGHT_SOURCE"
-DOCUMENTATION="$ROOT/docs/release-operations.md"
+DOCUMENTATION="$ROOT/docs/runbooks/release.md"
+UNRELEASED="$ROOT/docs/releases/unreleased.md"
 FIXTURES="$ROOT/tests/fixtures"
 OPENSSL=$(command -v openssl)
 TEMP_DIR=$(mktemp -d)
@@ -51,6 +52,12 @@ require_documentation() {
 
     for text in \
         '# Release operator runbook' \
+        'Release authorization' \
+        'explicit maintainer request' \
+        'Approval cannot be granted' \
+        'Unreleased change record' \
+        'docs/releases/unreleased.md' \
+        'Version and build policy' \
         'DEVELOPER_ID_APPLICATION_P12_BASE64' \
         'DEVELOPER_ID_APPLICATION_P12_PASSWORD' \
         'APPLE_TEAM_ID' \
@@ -67,18 +74,25 @@ require_documentation() {
         'Do not create a second account' \
         'MARKETING_VERSION' \
         'CURRENT_PROJECT_VERSION' \
-        'git add -- project.yml docs/releases/0.1.11.md' \
+        'git add -- project.yml docs/releases/unreleased.md docs/releases/0.1.12.md' \
         'git diff --cached --check' \
         'git commit' \
-        'git push origin main' \
+        'origin/main' \
         'git tag -a' \
-        'git push origin v' \
+        'git push origin refs/tags/' \
         'checksums.txt' \
+        'Publication approval gate' \
+        'second approval' \
         'Rollback before feed publication' \
         'CI GUI boundary' \
         'scripts/release/preflight.sh v0.1.11'; do
         assert_contains "$DOCUMENTATION" "$text"
     done
+
+    [ -f "$UNRELEASED" ] || fail 'Unreleased change record is missing.'
+    assert_contains "$UNRELEASED" '# SKALA Attendance — 다음 릴리스'
+    assert_contains "$UNRELEASED" '이 문서의 변경만으로 릴리스가 승인되거나 시작되지는 않습니다.'
+    assert_contains "$UNRELEASED" '아직 기록된 변경 사항이 없습니다.'
 
     assert_not_contains "$DOCUMENTATION" 'git commit -am'
 
