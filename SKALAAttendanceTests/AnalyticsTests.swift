@@ -35,6 +35,18 @@ final class AnalyticsEventTests: XCTestCase {
         XCTAssertNil(WebViewLoadFailureReason.classify(URLError(.cancelled)))
     }
 
+    func testAuthenticationProfileFillAllowsOnlyExactAuthOrigin() {
+        XCTAssertTrue(isAuthenticationPageURL(URL(string: "https://auth.skala-ai.com/")))
+        XCTAssertTrue(isAuthenticationPageURL(URL(string: "https://AUTH.SKALA-AI.COM/?source=app")))
+        XCTAssertTrue(isAuthenticationPageURL(URL(string: "https://auth.skala-ai.com:443/verify")))
+
+        XCTAssertFalse(isAuthenticationPageURL(nil))
+        XCTAssertFalse(isAuthenticationPageURL(URL(string: "http://auth.skala-ai.com/")))
+        XCTAssertFalse(isAuthenticationPageURL(URL(string: "https://auth.skala-ai.com:444/")))
+        XCTAssertFalse(isAuthenticationPageURL(URL(string: "https://sub.auth.skala-ai.com/")))
+        XCTAssertFalse(isAuthenticationPageURL(URL(string: "https://auth.skala-ai.com.evil.example/")))
+    }
+
     @MainActor
     func testProvisionalNavigationFailureReportsCoarseReason() {
         var reasons: [WebViewLoadFailureReason] = []
