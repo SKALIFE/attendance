@@ -86,7 +86,9 @@ private final class UpdateTelemetryDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     private func track(_ event: AnalyticsEvent, result: UpdateTelemetryResult) {
-        guard let installID = defaults.string(forKey: "anonymousInstallID") else {
+        guard let installationID = defaults.string(
+            forKey: AnalyticsLifecycle.installationIDKey
+        ) else {
             return
         }
 
@@ -94,7 +96,7 @@ private final class UpdateTelemetryDelegate: NSObject, SPUUpdaterDelegate {
         Task { [analyticsClient] in
             await analyticsClient.track(
                 event,
-                distinctID: installID,
+                installationID: installationID,
                 analyticsEnabled: analyticsEnabled,
                 extraData: ["result": result.rawValue]
             )

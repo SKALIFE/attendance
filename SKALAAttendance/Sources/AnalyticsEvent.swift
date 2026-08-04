@@ -3,6 +3,7 @@ import Foundation
 enum AnalyticsEvent: String, Sendable {
     case install
     case appLaunch = "app_launch"
+    case activeInstallation = "active_installation"
     case attendanceOpen = "attendance_open"
     case webViewLoadFailed = "webview_load_failed"
     case updateCheck = "update_check"
@@ -13,6 +14,7 @@ enum AnalyticsEvent: String, Sendable {
         switch self {
         case .install: "/app/install"
         case .appLaunch: "/app/launch"
+        case .activeInstallation: "/app/active"
         case .attendanceOpen: "/attendance/open"
         case .webViewLoadFailed: "/webview/load-failed"
         case .updateCheck: "/update/check"

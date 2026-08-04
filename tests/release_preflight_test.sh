@@ -92,7 +92,7 @@ require_documentation() {
     [ -f "$UNRELEASED" ] || fail 'Unreleased change record is missing.'
     assert_contains "$UNRELEASED" '# SKALA Attendance — 다음 릴리스'
     assert_contains "$UNRELEASED" '이 문서의 변경만으로 릴리스가 승인되거나 시작되지는 않습니다.'
-    assert_contains "$UNRELEASED" '아직 기록된 변경 사항이 없습니다.'
+    assert_contains "$UNRELEASED" '## 변경 사항'
 
     assert_not_contains "$DOCUMENTATION" 'git commit -am'
 

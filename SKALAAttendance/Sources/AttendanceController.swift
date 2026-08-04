@@ -118,6 +118,47 @@ if (
 return 'filled';
 """
 
+enum AnalyticsLifecycle {
+    static let installationIDKey = "anonymousInstallID"
+    static let installEventSentKey = "installEventSent"
+    static let installEventSchemaVersionKey = "installEventSchemaVersion"
+    static let activeInstallationDayKey = "activeInstallationDay"
+
+    static func utcDay(containing date: Date = Date()) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0
+        )
+    }
+
+    static func shouldSendInstall(defaults: UserDefaults) -> Bool {
+        defaults.integer(forKey: installEventSchemaVersionKey) < AnalyticsSchema.currentVersion
+    }
+
+    static func recordInstallDelivery(
+        _ result: AnalyticsDeliveryResult,
+        defaults: UserDefaults
+    ) {
+        guard result == .accepted else { return }
+        defaults.set(true, forKey: installEventSentKey)
+        defaults.set(AnalyticsSchema.currentVersion, forKey: installEventSchemaVersionKey)
+    }
+
+    static func recordActiveInstallationDelivery(
+        _ result: AnalyticsDeliveryResult,
+        day: String,
+        defaults: UserDefaults
+    ) {
+        guard result == .accepted else { return }
+        defaults.set(day, forKey: activeInstallationDayKey)
+    }
+}
+
 @MainActor
 final class AttendanceController: ObservableObject {
 
@@ -215,43 +256,70 @@ final class AttendanceController: ObservableObject {
     }
 
     private func trackLifecycleEvents() {
-        let installID = anonymousInstallID
-
+        let installationID = anonymousInstallID
         let enabled = analyticsEnabled
+        let activeDay = AnalyticsLifecycle.utcDay()
 
-        if !defaults.bool(forKey: "installEventSent") {
+        if AnalyticsLifecycle.shouldSendInstall(defaults: defaults) {
             Task {
-                await analyticsClient.track(.install, distinctID: installID, analyticsEnabled: enabled)
-                defaults.set(true, forKey: "installEventSent")
+                let result = await analyticsClient.track(
+                    .install,
+                    installationID: installationID,
+                    analyticsEnabled: enabled
+                )
+                AnalyticsLifecycle.recordInstallDelivery(result, defaults: defaults)
+            }
+        }
+
+        if defaults.string(forKey: AnalyticsLifecycle.activeInstallationDayKey) != activeDay {
+            Task {
+                let result = await analyticsClient.track(
+                    .activeInstallation,
+                    installationID: installationID,
+                    analyticsEnabled: enabled
+                )
+                AnalyticsLifecycle.recordActiveInstallationDelivery(
+                    result,
+                    day: activeDay,
+                    defaults: defaults
+                )
             }
         }
 
         Task {
-            await analyticsClient.track(.appLaunch, distinctID: installID, analyticsEnabled: enabled)
-            await analyticsClient.track(.attendanceOpen, distinctID: installID, analyticsEnabled: enabled)
+            await analyticsClient.track(
+                .appLaunch,
+                installationID: installationID,
+                analyticsEnabled: enabled
+            )
+            await analyticsClient.track(
+                .attendanceOpen,
+                installationID: installationID,
+                analyticsEnabled: enabled
+            )
         }
 
         logger.info("app launched, analytics configured: \(self.analyticsConfig.isConfigured)")
     }
 
     private var anonymousInstallID: String {
-        if let existing = defaults.string(forKey: "anonymousInstallID") {
+        if let existing = defaults.string(forKey: AnalyticsLifecycle.installationIDKey) {
             return existing
         }
 
-        let installID = UUID().uuidString
-        defaults.set(installID, forKey: "anonymousInstallID")
-        return installID
+        let installationID = UUID().uuidString
+        defaults.set(installationID, forKey: AnalyticsLifecycle.installationIDKey)
+        return installationID
     }
 
     private func trackWebViewLoadFailure(_ reason: WebViewLoadFailureReason) {
-        let installID = anonymousInstallID
+        let installationID = anonymousInstallID
         let enabled = analyticsEnabled
 
         Task {
             await analyticsClient.track(
                 .webViewLoadFailed,
-                distinctID: installID,
+                installationID: installationID,
                 analyticsEnabled: enabled,
                 extraData: ["reason": reason.rawValue]
             )

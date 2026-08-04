@@ -47,10 +47,10 @@
 	<key>SUPublicEDKey</key>
 	<string>Wd3jeI01lpAYggUMHynFMN2FmRbwldZUGyao2hS4lik=</string>
 	<key>UMAMI_BASE_URL</key>
-	<string>https://gateway.umami.is</string>
+	<string>$(UMAMI_BASE_URL)</string>
 	<key>UMAMI_HOSTNAME</key>
-	<string>attendance-app.skalife.kr</string>
+	<string>$(UMAMI_HOSTNAME)</string>
 	<key>UMAMI_WEBSITE_ID</key>
-	<string>2cb15230-9bd7-4488-bad8-e806d5f96619</string>
+	<string>$(UMAMI_WEBSITE_ID)</string>
 </dict>
 </plist>
