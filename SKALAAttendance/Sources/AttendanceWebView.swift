@@ -11,6 +11,19 @@ let mobileUserAgent =
 /// The official attendance URL.
 let attendanceURL = URL(string: "https://att.skala-ai.com/")!
 
+/// The only page where user-requested profile filling is allowed.
+let authenticationURL = URL(string: "https://auth.skala-ai.com/")!
+
+func isAuthenticationPageURL(_ url: URL?) -> Bool {
+    guard let url else {
+        return false
+    }
+
+    return url.scheme?.lowercased() == authenticationURL.scheme
+        && url.host?.lowercased() == authenticationURL.host
+        && (url.port == nil || url.port == 443)
+}
+
 enum WebViewLoadFailureReason: String, Equatable, Sendable {
     case offline
     case timeout
@@ -54,9 +67,19 @@ enum WebViewLoadFailureReason: String, Equatable, Sendable {
 @MainActor
 final class WebViewNavigationDelegate: NSObject, WKNavigationDelegate {
     private let onNavigationFailure: (WebViewLoadFailureReason) -> Void
+    private let onNavigationFinished: (URL?) -> Void
 
     init(onNavigationFailure: @escaping (WebViewLoadFailureReason) -> Void) {
         self.onNavigationFailure = onNavigationFailure
+        self.onNavigationFinished = { _ in }
+    }
+
+    init(
+        onNavigationFailure: @escaping (WebViewLoadFailureReason) -> Void,
+        onNavigationFinished: @escaping (URL?) -> Void
+    ) {
+        self.onNavigationFailure = onNavigationFailure
+        self.onNavigationFinished = onNavigationFinished
     }
 
     func webView(
@@ -82,13 +105,20 @@ final class WebViewNavigationDelegate: NSObject, WKNavigationDelegate {
 
         onNavigationFailure(reason)
     }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation?
+    ) {
+        onNavigationFinished(webView.url)
+    }
 }
 
 /// Builds a WKWebViewConfiguration optimised for mobile attendance.
 ///
 /// - Persistent data store: login cookies survive app restarts.
 /// - Mobile content mode: WKWebView prefers mobile layout regardless of viewport.
-/// - No JavaScript automation or content inspection.
+/// - No page clicks or submissions; profile filling requires an explicit user action.
 @MainActor
 func makeMobileWebViewConfiguration() -> WKWebViewConfiguration {
     let config = WKWebViewConfiguration()
